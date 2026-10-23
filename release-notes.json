@@ -1,5 +1,18 @@
 [
   {
+    "version": "1.0.1",
+    "title": "Picture Library and Urdu Voices",
+    "changes": [
+      "New picture library. Find pictures and use them in your videos.",
+      "New photo scenes. Your videos can now show real photos, not only motion graphics.",
+      "You can now start a video from a topic. You do not need a document or pasted text.",
+      "New Urdu narration voices. Make videos with Urdu voice-over.",
+      "Pictures load more reliably. When a picture website is busy, the app waits and tries again, so fewer pictures go missing.",
+      "The studio preview no longer crashes when it plays audio.",
+      "The studio preview runs more smoothly while it plays."
+    ]
+  },
+  {
     "version": "1.0.0",
     "title": "Explainer Studio 1.0.0",
     "changes": [
