@@ -1,0 +1,23 @@
+{
+	"compilerOptions": {
+		"target": "ES2023",
+		"lib": ["ES2023", "DOM", "DOM.Iterable"],
+		"module": "ESNext",
+		"moduleResolution": "Bundler",
+		"jsx": "react-jsx",
+		"strict": true,
+		"esModuleInterop": true,
+		"skipLibCheck": true,
+		"resolveJsonModule": true,
+		"isolatedModules": true,
+		"noEmit": true,
+		"types": ["node", "vite/client"],
+		"baseUrl": ".",
+		"paths": {
+			"@shared/*": ["src/shared/*"],
+			"@renderer/*": ["src/renderer/src/*"],
+			"@video/*": ["video/src/*"]
+		}
+	},
+	"include": ["src/**/*", "video/**/*", "tests/**/*", "electron.vite.config.ts", "vitest.config.ts", "vitest.render.config.ts", "vitest.voice.config.ts", "vitest.ingest.config.ts", "vitest.planner.config.ts"]
+}

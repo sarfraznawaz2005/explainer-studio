@@ -1,0 +1,35 @@
+node_modules/
+out/
+dist/
+release/
+
+npm-debug.log*
+*.log
+
+# Made again by every test run (npm run test:render).
+tests/__stills__/
+
+# Local task tracker database (aitasks) and its backups.
+.aitasks/
+
+# Local secrets and databases (the app keeps its real data in %APPDATA%\Explainer Studio)
+.env
+.env.*
+*.db
+*.db-wal
+*.db-shm
+*.pem
+*.key
+*.p12
+*.pfx
+
+.DS_Store
+Thumbs.db
+
+.vscode/
+.idea/
+.claude/
+
+# Personal helper (pull, AI commit message, push). Kept out of the repo, as in Igent.
+push.ps1
+push.bat

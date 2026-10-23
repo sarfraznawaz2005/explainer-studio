@@ -1,0 +1,4 @@
+kokoro-onnx==0.6.1
+pypdfium2
+rapidocr
+opencv-python-headless

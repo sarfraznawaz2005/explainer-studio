@@ -1,0 +1,62 @@
+# Release build: `npm run dist` (Windows NSIS installer + portable zip in release/).
+# installer.bat / release.bat run it; release.bat uploads the files to GitHub with gh.
+appId: com.sarfraz.explainerstudio
+productName: Explainer Studio
+copyright: Copyright © 2026 Sarfraz
+directories:
+  output: release
+  buildResources: build
+files:
+  - out/main/**
+  - out/preload/**
+  - out/renderer/**
+  - package.json
+  - "!**/*.map"
+asar: true
+# Remotion's ffmpeg/compositor are executables and cannot run from inside the asar.
+asarUnpack:
+  - node_modules/@remotion/compositor-*/**
+extraResources:
+  - from: out/video-bundle
+    to: video-bundle
+  - from: resources/icon.png
+    to: icon.png
+  - from: resources/python
+    to: python
+    filter:
+      - "*.py"
+      - requirements.txt
+electronFuses:
+  runAsNode: false
+  enableCookieEncryption: true
+  enableNodeOptionsEnvironmentVariable: false
+  enableNodeCliInspectArguments: false
+  enableEmbeddedAsarIntegrityValidation: true
+  onlyLoadAppFromAsar: true
+  loadBrowserProcessSpecificV8Snapshot: false
+  # Must stay on: the app window loads its page from file:// inside the asar (off = blank window).
+  grantFileProtocolExtraPrivileges: true
+npmRebuild: false
+# No auto-update feed: releases are installed by hand.
+publish: null
+win:
+  icon: build/icon.ico
+  target:
+    - nsis
+    - zip
+  # No spaces: GitHub renames uploaded files with spaces. scripts/release.ps1 expects these names.
+  artifactName: ExplainerStudio-${version}-portable.${ext}
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: Explainer Studio
+  installerIcon: build/icon.ico
+  uninstallerIcon: build/icon.ico
+  installerHeaderIcon: build/icon.ico
+  artifactName: ExplainerStudio-Setup-${version}.${ext}
+  # No auto-updater, so no .blockmap file.
+  differentialPackage: false
+  deleteAppDataOnUninstall: false
