@@ -365,3 +365,20 @@ describe("fitting photos to the video", () => {
 		expect(turned).toMatchObject({ width: 3000, height: 4000 });
 	});
 });
+
+describe("polite downloads", () => {
+	it("waits and tries once more when a site says too many requests", async () => {
+		let calls = 0;
+		const fetchImpl = (async () => {
+			calls++;
+			return calls === 1 ? new Response("slow down", { status: 429, headers: { "retry-after": "1" } }) : new Response(new Uint8Array(jpeg()), { status: 200 });
+		}) as unknown as typeof fetch;
+		const t0 = Date.now();
+		await expect(downloadImage("https://upload.wikimedia.org/x.jpg", { fetchImpl })).resolves.toMatchObject({ mediaType: "image/jpeg" });
+		expect(calls).toBe(2);
+		expect(Date.now() - t0).toBeGreaterThanOrEqual(900);
+		// A second refusal is final.
+		const always = (async () => new Response("no", { status: 429, headers: { "retry-after": "1" } })) as unknown as typeof fetch;
+		await expect(downloadImage("https://upload.wikimedia.org/y.jpg", { fetchImpl: always })).rejects.toThrow(/HTTP 429/);
+	});
+});

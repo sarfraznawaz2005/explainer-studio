@@ -45,7 +45,8 @@ export function Sidebar() {
 					</div>
 				))}
 			</nav>
-			<div className="border-t border-sidebar-border px-2.5 py-3">
+			{/* A slim band with Settings in its middle, across and up and down. */}
+			<div className="flex h-10 shrink-0 items-center border-t border-sidebar-border px-2.5 [&>a]:w-full [&>a]:justify-center">
 				<NavLink item={SETTINGS_ITEM} pathname={pathname} />
 			</div>
 		</aside>

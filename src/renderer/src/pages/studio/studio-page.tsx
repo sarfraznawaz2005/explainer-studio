@@ -417,7 +417,19 @@ function StudioEditor({
 		if (!p) return;
 		// Development builds only: lets the voice sync test read the Player clock.
 		if (import.meta.env.DEV) (window as unknown as { __esPlayer?: PlayerRef }).__esPlayer = p;
-		const onFrame = (e: { detail: { frame: number } }) => setFrame(e.detail.frame);
+		// The Player sends frameupdate from inside its own effect. Setting state right there, every
+		// frame, is a chain of effect updates that React reports as "Maximum update depth exceeded".
+		// The newest frame is applied on the next animation frame instead (at most once per paint).
+		let raf = 0;
+		let latest = 0;
+		const onFrame = (e: { detail: { frame: number } }) => {
+			latest = e.detail.frame;
+			if (!raf)
+				raf = requestAnimationFrame(() => {
+					raf = 0;
+					setFrame(latest);
+				});
+		};
 		const onPlay = () => setPlaying(true);
 		const onPause = () => setPlaying(false);
 		p.addEventListener("frameupdate", onFrame);
@@ -431,6 +443,7 @@ function StudioEditor({
 			p.removeEventListener("play", onPlay);
 			p.removeEventListener("pause", onPause);
 			p.removeEventListener("ended", onPause);
+			cancelAnimationFrame(raf);
 		};
 	}, []);
 

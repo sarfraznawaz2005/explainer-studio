@@ -45,9 +45,29 @@ const stripHtml = (s: unknown) =>
 		.replace(/\s+/g, " ")
 		.trim();
 
+/**
+ * fetch that waits and tries once more when a site says "too many requests" (429)
+ * or "busy" (503), as Wikimedia and Openverse ask. The wait follows Retry-After, 1 to 5 seconds.
+ */
+async function politeFetch(url: string, init: RequestInit, deps: WebDeps): Promise<Response> {
+	const go = () => (deps.fetchImpl ?? fetch)(url, init);
+	const r = await go();
+	if (r.status !== 429 && r.status !== 503) return r;
+	const after = Number(r.headers.get("retry-after"));
+	const ms = Math.min(5000, Math.max(1000, Number.isFinite(after) && after > 0 ? after * 1000 : 1500));
+	await new Promise<void>((resolve, reject) => {
+		const t = setTimeout(resolve, ms);
+		init.signal?.addEventListener("abort", () => {
+			clearTimeout(t);
+			reject(init.signal!.reason);
+		});
+	});
+	return go();
+}
+
 async function getJson(url: string, deps: WebDeps): Promise<unknown> {
 	const signal = deps.signal ? AbortSignal.any([deps.signal, AbortSignal.timeout(TIMEOUT_MS)]) : AbortSignal.timeout(TIMEOUT_MS);
-	const r = await (deps.fetchImpl ?? fetch)(url, { headers: { "User-Agent": USER_AGENT, Accept: "application/json" }, signal });
+	const r = await politeFetch(url, { headers: { "User-Agent": USER_AGENT, Accept: "application/json" }, signal }, deps);
 	if (!r.ok) throw new Error(`HTTP ${r.status} from ${new URL(url).host}`);
 	return r.json();
 }
@@ -198,7 +218,7 @@ const MEDIA: [string, (b: Buffer) => boolean][] = [
 export async function downloadImage(url: string, deps: WebDeps): Promise<{ data: Buffer; mediaType: string; width: number; height: number }> {
 	if (!/^https:\/\//.test(url)) throw new Error("Pictures are only downloaded over https.");
 	const signal = deps.signal ? AbortSignal.any([deps.signal, AbortSignal.timeout(60_000)]) : AbortSignal.timeout(60_000);
-	const r = await (deps.fetchImpl ?? fetch)(url, { headers: { "User-Agent": USER_AGENT }, signal, redirect: "follow" });
+	const r = await politeFetch(url, { headers: { "User-Agent": USER_AGENT }, signal, redirect: "follow" }, deps);
 	if (!r.ok || !r.body) throw new Error(`HTTP ${r.status} from ${new URL(url).host}`);
 	if (r.url && !/^https:\/\//.test(r.url)) throw new Error("The picture was redirected away from https.");
 	if (Number(r.headers.get("content-length") ?? 0) > MAX_BYTES) throw new Error("The picture is larger than 25 MB.");

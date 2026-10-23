@@ -52,6 +52,7 @@ export function needsSystem(): string {
 		"- Spread the photos over the chapters where they fit. Do not ask twice for the same subject.",
 		"- Skip anything the user's own pictures already show.",
 		"- It is fine to ask for fewer photos than allowed, or none.",
+		"- Write subject, entity, queries and why in English, whatever the video's language: the picture libraries are searched in English.",
 	].join("\n");
 }
 

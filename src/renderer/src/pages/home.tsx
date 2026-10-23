@@ -109,11 +109,11 @@ export function HomePage() {
 				<div className="relative max-w-2xl">
 					<div className="mb-4 inline-flex items-center gap-1.5 rounded-full border bg-subtle px-2.5 py-1 text-[12px] font-medium text-muted-foreground">
 						<Sparkles className="size-3.5 text-primary" />
-						Long-form explainers, made for YouTube
+						Explainer videos for YouTube, Shorts, TikTok and Reels
 					</div>
-					<h1 className="text-[28px] font-semibold leading-tight tracking-tight">Turn any chapter into a video people finish watching.</h1>
+					<h1 className="text-[28px] font-semibold leading-tight tracking-tight">Explainer Studio</h1>
 					<p className="mt-3 max-w-xl text-[15px] leading-relaxed text-muted-foreground">
-						Drop in your material, choose who it is for, and get a clear, step-by-step explainer with narration, motion graphics, music and sound.
+						Start from your own material or just a topic, choose who it is for, and get a clear, step-by-step explainer with narration, motion graphics, photos, music and sound.
 					</p>
 					<div className="mt-6 flex flex-wrap items-center gap-2">
 						<Button size="lg" asChild>
