@@ -550,6 +550,9 @@ function StudioEditor({
 								clickToPlay
 								doubleClickToFullscreen
 								spaceKeyToPlayOrPause={false}
+								// No shared audio tag pool: voice, music and effects premount together and overflow
+								// the default 5 tags, which crashes the preview. Electron allows autoplay, so the pool is not needed.
+								numberOfSharedAudioTags={0}
 								acknowledgeRemotionLicense
 							/>
 						</div>
