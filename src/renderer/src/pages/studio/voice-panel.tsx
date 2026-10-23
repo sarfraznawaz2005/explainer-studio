@@ -180,10 +180,10 @@ function VoiceSettingsDialog({ draftId, status, onClose }: { draftId: string; st
 		onClose(false);
 	};
 
-	const voiceOptions = (voices ?? [{ id: voice, name: voice, accent: "American", gender: "female", recommended: false } as Voice]).map((v) => ({
+	const voiceOptions = (voices ?? [{ id: voice, name: voice, accent: "", gender: "female", recommended: false, downloadBytes: 0 } as Voice]).map((v) => ({
 		value: v.id,
 		label: voices ? `${v.name} · ${v.accent} ${v.gender}` : v.id,
-		hint: v.recommended ? "Best" : undefined,
+		hint: v.downloadBytes ? `Downloads ${Math.round(v.downloadBytes / 1_000_000)} MB once` : v.recommended ? "Best" : undefined,
 	}));
 
 	return (

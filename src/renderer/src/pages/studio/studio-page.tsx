@@ -1,6 +1,6 @@
 import { Player, type PlayerRef } from "@remotion/player";
 import { Link, useNavigate, useSearch } from "@tanstack/react-router";
-import { AlertCircle, Check, ChevronLeft, ChevronRight, CloudUpload, FileStack, Loader2, PanelRight, Pause, Play, Plus, Redo2, Sparkles, Undo2 } from "lucide-react";
+import { AlertCircle, Check, ChevronLeft, ChevronRight, CloudUpload, FileStack, Image as ImageIcon, Loader2, PanelRight, Pause, Play, Plus, Redo2, Sparkles, Undo2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { assetChannels, type DraftSound } from "@shared/ipc/assets";
 import { plannerChannels } from "@shared/ipc/planner";
@@ -21,12 +21,17 @@ import { Badge, Kbd, PageHeader, Tooltip } from "@renderer/components/ui/primiti
 import { toast } from "sonner";
 import { call, errorText } from "@renderer/lib/ipc";
 import { cn } from "@renderer/lib/utils";
+import { formatOf, VIDEO_FORMATS, type VideoFormat } from "@shared/planner";
+import type { FigureMeta } from "@shared/source";
 import { useAssets } from "@renderer/stores/assets";
 import { useNarration } from "@renderer/stores/narration";
 import { usePlanner } from "@renderer/stores/planner";
 import { RegenerateDialog } from "./edit-panel";
 import { Inspector, type InspectorEdit } from "./inspector";
 import { RenderButton } from "./render-dialog";
+import { PictureChoices, type PictureChoice } from "./props-form";
+import { metaOf, PicturesPanel, useDraftPictures } from "@renderer/components/pictures/pictures-card";
+import { Dialog, DialogContent } from "@renderer/components/ui/dialog";
 import { SceneList } from "./scene-list";
 import { SoundControls } from "./sound-panel";
 import { TimelineStrip } from "./timeline-strip";
@@ -34,6 +39,7 @@ import { VoiceControls } from "./voice-panel";
 
 const STYLE_LABELS: Record<StyleId, string> = { clean: "Clean", chalkboard: "Chalkboard", paper: "Paper", blueprint: "Blueprint", neon: "Neon", cartoon: "Cartoon", academic: "Academic", brand: "Brand" };
 const STYLE_OPTIONS = STYLE_IDS.map((value) => ({ value, label: STYLE_LABELS[value] }));
+const FORMAT_OPTIONS = (Object.keys(VIDEO_FORMATS) as VideoFormat[]).map((value) => ({ value, label: VIDEO_FORMATS[value].label, hint: VIDEO_FORMATS[value].hint }));
 
 /** The plan with one scene replaced (same id). */
 function withScene(plan: VideoPlan, scene: Scene): VideoPlan {
@@ -121,6 +127,8 @@ function DraftStudio({ draftId }: { draftId: string }) {
 	const [save, setSave] = useState<SaveState>("saved");
 	const [sound, setSound] = useState<DraftSound | null>(null);
 	const [brand, setBrand] = useState<BrandColors | undefined>();
+	const pics = useDraftPictures(draftId);
+	const figureMeta = useMemo(() => metaOf(pics.state), [pics.state]);
 	const finished = useNarration((s) => s.finished[draftId] ?? 0);
 	const library = useAssets((s) => s.version);
 	const planner = usePlanner((s) => s.byDraft[draftId]);
@@ -277,6 +285,9 @@ function DraftStudio({ draftId }: { draftId: string }) {
 			backTo={draftId}
 			audioBase={state.voice?.audioBase}
 			figureBase={`es-media://figure/${draftId}/`}
+			figureMeta={figureMeta}
+			pictureChoices={pics.state?.pictures}
+			picturesControl={<PicturesButton draftId={draftId} pics={pics} />}
 			brand={brand}
 			onSaveSentence={saveSentence}
 			sound={sound}
@@ -285,6 +296,31 @@ function DraftStudio({ draftId }: { draftId: string }) {
 			soundControls={(plan) => (sound ? <SoundControls draftId={draftId} plan={plan} sound={sound} onChange={setSound} /> : null)}
 			renderControl={<RenderButton draftId={draftId} />}
 		/>
+	);
+}
+
+/** The draft's pictures in a dialog: add your own, describe them, swap web photos. */
+function PicturesButton({ draftId, pics }: { draftId: string; pics: ReturnType<typeof useDraftPictures> }) {
+	const [open, setOpen] = useState(false);
+	const n = pics.state?.pictures.length ?? 0;
+	return (
+		<>
+			<Tooltip content="Your photos and the photos found on the web. Pick one for a scene in the details panel.">
+				<Button variant="outline" size="sm" onClick={() => setOpen(true)}>
+					<ImageIcon />
+					Pictures{n ? ` (${n})` : ""}
+				</Button>
+			</Tooltip>
+			{open ? (
+				<Dialog open onOpenChange={(o) => !o && setOpen(false)}>
+					<DialogContent title="Pictures in this video" description="To show a picture, select a picture scene and pick it in the details panel, or ask the AI to rewrite a scene." className="w-[min(94vw,880px)]">
+						<div className="mt-4 max-h-[70vh] overflow-y-auto pr-1">
+							<PicturesPanel draftId={draftId} state={pics.state} setState={pics.setState} columns={5} />
+						</div>
+					</DialogContent>
+				</Dialog>
+			) : null}
+		</>
 	);
 }
 
@@ -330,6 +366,9 @@ function StudioEditor({
 	renderControl,
 	editor,
 	figureBase,
+	figureMeta,
+	pictureChoices,
+	picturesControl,
 	brand,
 }: {
 	input: VideoPlanInput;
@@ -343,6 +382,11 @@ function StudioEditor({
 	renderControl?: React.ReactNode;
 	editor?: EditorControls;
 	figureBase?: string;
+	/** Picture details by file name (size, subject, credit). */
+	figureMeta?: Record<string, FigureMeta>;
+	/** The draft's pictures (figure fields become a picture picker). */
+	pictureChoices?: PictureChoice[];
+	picturesControl?: React.ReactNode;
 	/** Brand kit colours for the "Brand" style (the same kit renders use). */
 	brand?: BrandColors;
 }) {
@@ -354,6 +398,9 @@ function StudioEditor({
 	const [sampleStyle, setSampleStyle] = useState<StyleId>(plan.meta.style);
 	const shownStyle = editor ? style : sampleStyle;
 	// In a draft the style is part of the plan (saved, undoable); the sample only previews.
+	// Every scene lays itself out for the frame shape, so switching keeps the script and only changes the picture.
+	const format = formatOf(plan.meta);
+	const setFormat = (v: VideoFormat) => editor && void editor.apply({ ...plan, meta: { ...plan.meta, width: VIDEO_FORMATS[v].width, height: VIDEO_FORMATS[v].height } }, `Format: ${VIDEO_FORMATS[v].label}`);
 	const setStyle = (v: StyleId) => (editor ? void editor.apply({ ...plan, meta: { ...plan.meta, style: v } }, `Style: ${STYLE_LABELS[v]}`) : setSampleStyle(v));
 	// Open one second in: frame 0 is the start of a fade-in and looks blank.
 	const [startFrame] = useState(() => Math.min(timeline.durationInFrames - 1, timeline.fps));
@@ -450,7 +497,7 @@ function StudioEditor({
 	const soundtrack = useMemo(() => (sound ? buildSoundtrack(plan, timeline, sound.setup, sound.library, { seed: sound.seed, roleDefaults: sound.roleDefaults }) : undefined), [plan, timeline, sound]);
 	// Development builds only: lets the sound test read the mix.
 	if (import.meta.env.DEV) (window as unknown as { __esSoundtrack?: unknown }).__esSoundtrack = soundtrack;
-	const inputProps = useMemo<PlanVideoProps>(() => ({ plan: input, style: shownStyle, audioBase, soundtrack, figureBase, brand }), [input, shownStyle, audioBase, soundtrack, figureBase, brand]);
+	const inputProps = useMemo<PlanVideoProps>(() => ({ plan: input, style: shownStyle, audioBase, soundtrack, figureBase, figureMeta, brand }), [input, shownStyle, audioBase, soundtrack, figureBase, figureMeta, brand]);
 	const localFrame = selected && frame >= selected.from && frame < selected.from + selected.durationInFrames ? frame - selected.from : null;
 	const edit = useMemo<InspectorEdit | undefined>(
 		() =>
@@ -464,7 +511,11 @@ function StudioEditor({
 				: undefined,
 		[editor, plan],
 	);
-	const inspector = <Inspector key={selected?.scene.id} timed={selected} fps={timeline.fps} localFrame={localFrame} audioBase={audioBase} onSaveSentence={onSaveSentence} edit={edit} />;
+	const inspector = (
+		<PictureChoices.Provider value={pictureChoices ?? null}>
+			<Inspector key={selected?.scene.id} timed={selected} fps={timeline.fps} localFrame={localFrame} audioBase={audioBase} onSaveSentence={onSaveSentence} edit={edit} />
+		</PictureChoices.Provider>
+	);
 
 	return (
 		<div className="flex h-full min-h-0 flex-col">
@@ -497,6 +548,7 @@ function StudioEditor({
 					) : null}
 					{voiceControls}
 					{soundControls?.(plan)}
+					{picturesControl}
 					{backTo ? (
 						<Tooltip content="Back to the outline and checks">
 							<Button variant="ghost" size="sm" asChild>
@@ -506,6 +558,11 @@ function StudioEditor({
 								</Link>
 							</Button>
 						</Tooltip>
+					) : null}
+					{editor ? (
+						<div className="w-36">
+							<Select<VideoFormat> ariaLabel="Video format" value={format} onChange={setFormat} disabled={editor.busy} options={FORMAT_OPTIONS} />
+						</div>
 					) : null}
 					<div className="w-32">
 						<Select<StyleId> ariaLabel="Visual style" value={shownStyle} onChange={setStyle} disabled={editor?.busy} options={STYLE_OPTIONS} />
@@ -535,7 +592,8 @@ function StudioEditor({
 
 				<div className="min-w-0 flex-1 overflow-y-auto">
 					<div className="flex w-full flex-col gap-4 p-5">
-						<div className="overflow-hidden rounded-xl border bg-black shadow-md">
+						{/* A vertical preview is as tall as fits the window, not as tall as the full width would make it. */}
+						<div className={cn("overflow-hidden rounded-xl border bg-black shadow-md", format === "vertical" && "mx-auto w-full max-w-[calc(72vh*9/16)]")}>
 							<Player
 								ref={player}
 								initialFrame={startFrame}

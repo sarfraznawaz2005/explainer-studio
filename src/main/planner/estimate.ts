@@ -88,7 +88,7 @@ export function priceEstimate(step: PlanStep, calls: EstimateCall[], target: (sl
 	}
 	const overhead = planner.kind === "claude-subscription" ? 8 : 4;
 	const callSeconds = (cs: EstimateCall[]) => cs.reduce((n, c) => n + overhead + c.output / 55, 0);
-	const parallel = step === "script" ? CONCURRENCY : 1;
+	const parallel = step === "script" || step === "research" ? CONCURRENCY : 1;
 	return {
 		step,
 		calls: base.length,

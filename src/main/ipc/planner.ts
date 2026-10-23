@@ -1,5 +1,6 @@
 import { plannerChannels as ch } from "@shared/ipc/planner";
 import { cancelPlanner, estimateRegenerate, estimateStep, planDraft, saveOutline, savePlan, saveSentence, startOutline, startRegenerate, startScript } from "../planner/jobs";
+import { estimateTopic, startTopic } from "../ingest/jobs";
 import { handle } from "./register";
 
 export function registerPlannerIpc(): void {
@@ -18,6 +19,8 @@ export function registerPlannerIpc(): void {
 	handle(ch.savePlan, ({ draftId, plan }) => ({ plan: savePlan(draftId, plan) }));
 	handle(ch.regenerateEstimate, (req) => estimateRegenerate(req));
 	handle(ch.regenerate, async (req) => ({ jobId: await startRegenerate(req) }));
+	handle(ch.topicEstimate, (req) => estimateTopic(req));
+	handle(ch.topicStart, async (req) => ({ jobId: await startTopic(req) }));
 	handle(ch.saveSentence, ({ draftId, sentenceId, text }) => {
 		saveSentence(draftId, sentenceId, text);
 		return { ok: true as const };

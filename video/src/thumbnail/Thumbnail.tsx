@@ -3,7 +3,7 @@ import { AbsoluteFill, Sequence } from "remotion";
 import { VideoPlan, type SceneType, type StyleId, type VideoPlanInput } from "../../../src/shared/plan/schema";
 import { computeTimeline, type TimedScene } from "../../../src/shared/plan/timing";
 import { SceneView, useFonts } from "../plan/PlanVideo";
-import { SceneProvider } from "../scenes/kit";
+import { FrameSizeProvider, SceneProvider } from "../scenes/kit";
 import { styleFor, type BrandColors, type VisualStyle } from "../styles/styles";
 
 /**
@@ -48,9 +48,12 @@ function KeyVisual({ timed, style, width, figureBase }: { timed: TimedScene; sty
 				<AbsoluteFill style={{ background: style.bg }}>
 					<Background />
 					<Sequence from={-at} layout="none">
-						<SceneProvider value={{ timed, style, figureBase }}>
-							<SceneView scene={timed.scene} />
-						</SceneProvider>
+						{/* Laid out as a wide 1920×1080 scene (also for vertical videos), whatever the thumbnail size. */}
+						<FrameSizeProvider value={{ width: 1920, height: 1080 }}>
+							<SceneProvider value={{ timed, style, figureBase }}>
+								<SceneView scene={timed.scene} />
+							</SceneProvider>
+						</FrameSizeProvider>
 					</Sequence>
 				</AbsoluteFill>
 			</div>

@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { isAbsolute, join, relative } from "node:path";
 import { PACKAGES_BYTES_ESTIMATE, VoiceId, type InstallProgress, type InstallStep, type VoiceState } from "@shared/ipc/voice";
@@ -9,7 +9,7 @@ import { streamTool, ToolError } from "../security/exec";
 import { downloadPinned, isPinnedFile, type Pinned } from "./download";
 import { cleanPythonEnv, findPython, type PythonFound, type PythonMissing } from "./python";
 import { createSidecar, type ReadyInfo, type Sidecar } from "./sidecar";
-import { langOf } from "./voices";
+import { langOf, piperVoice } from "./voices";
 
 /** Kokoro v1.0 model files from the kokoro-onnx GitHub release. Hashes were measured once and pinned. */
 export const KOKORO_FILES = {
@@ -79,6 +79,24 @@ export function createVoiceEngine(deps: EngineDeps) {
 	const requirements = join(deps.scriptsDir, "requirements.txt");
 	const script = join(deps.scriptsDir, "tts.py");
 	const modelPath = (k: keyof Files) => join(modelsDir, files[k].file);
+	/** Piper voices (Urdu) live here, downloaded on first use. */
+	const piperDir = join(modelsDir, "piper");
+	const piperFiles = (id: string) => {
+		const p = piperVoice(id)!;
+		return [
+			{ pin: p.model, path: join(piperDir, `${p.key}.onnx`) },
+			{ pin: p.config, path: join(piperDir, `${p.key}.onnx.json`) },
+		];
+	};
+	const sizeIs = (path: string, bytes: number) => {
+		try {
+			return statSync(path).size === bytes;
+		} catch {
+			return false;
+		}
+	};
+	const piperDownloaded = (id: string) => !!piperVoice(id) && piperFiles(id).every((f) => sizeIs(f.path, f.pin.bytes));
+	const piperJobs = new Map<string, Promise<void>>();
 
 	let job: { progress: InstallProgress; abort: AbortController; done: Promise<void> } | null = null;
 	let last: InstallProgress | null = null;
@@ -311,7 +329,7 @@ export function createVoiceEngine(deps: EngineDeps) {
 		if (!sidecar) {
 			sidecar = createSidecar({
 				command: venvPython,
-				args: ["-I", "-u", script, "--model", modelPath("model"), "--voices", modelPath("voices")],
+				args: ["-I", "-u", script, "--model", modelPath("model"), "--voices", modelPath("voices"), "--piper-dir", piperDir],
 				env: cleanPythonEnv(),
 				idleMs: deps.idleMs ?? 10 * 60_000,
 				log: (level, msg) => log(level, `[tts] ${msg}`),
@@ -322,6 +340,31 @@ export function createVoiceEngine(deps: EngineDeps) {
 
 	function stopSidecar(): void {
 		sidecar?.stop();
+	}
+
+	/** Downloads a Piper voice once (pinned size and SHA-256). Calls for the same voice share one download. */
+	function ensurePiper(id: string): Promise<void> {
+		if (piperDownloaded(id)) return Promise.resolve();
+		let p = piperJobs.get(id);
+		if (!p) {
+			p = (async () => {
+				await mkdir(piperDir, { recursive: true });
+				log("info", `downloading Piper voice ${id}`);
+				for (const f of piperFiles(id)) {
+					if (await isPinnedFile(f.path, f.pin)) continue;
+					await rm(f.path, { force: true });
+					await downloadPinned(f.pin, f.path, { fetchImpl: deps.fetchImpl });
+				}
+				log("info", `Piper voice ${id} ready`);
+			})()
+				.catch((err: unknown) => {
+					log("error", `Piper voice ${id} download failed: ${(err as Error)?.message}`);
+					throw new VoiceError("Could not download this voice. Check your internet connection, then try again.", (err as Error)?.message);
+				})
+				.finally(() => piperJobs.delete(id));
+			piperJobs.set(id, p);
+		}
+		return p;
 	}
 
 	/**
@@ -336,7 +379,14 @@ export function createVoiceEngine(deps: EngineDeps) {
 		if (!duringInstall && !readMarker()) throw new VoiceError("The voice engine is not installed. Install it in Settings → Voice.");
 		VoiceId.parse(req.voice);
 		if (!isAbsolute(req.out) || !/\.wav$/i.test(req.out)) throw new Error("Output must be an absolute .wav path");
-		const r = await getSidecar().request<{ durationMs: number }>("speak", { text: req.text, voice: req.voice, speed: req.speed, lang: langOf(req.voice), out: req.out });
+		const piper = piperVoice(req.voice);
+		if (piper) await ensurePiper(req.voice);
+		const r = await getSidecar().request<{ durationMs: number }>(
+			"speak",
+			piper
+				? { text: req.text, piper: piper.key, speed: req.speed, out: req.out }
+				: { text: req.text, voice: req.voice, speed: req.speed, lang: langOf(req.voice), out: req.out },
+		);
 		return { path: req.out, durationMs: r.durationMs };
 	}
 
@@ -369,6 +419,7 @@ export function createVoiceEngine(deps: EngineDeps) {
 		isInstalling: () => !!job,
 		speak,
 		voiceIds,
+		piperDownloaded,
 		stop: stopSidecar,
 		readWav: (path: string) => readFile(path),
 	};

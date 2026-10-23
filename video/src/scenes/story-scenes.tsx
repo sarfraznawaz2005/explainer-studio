@@ -2,7 +2,7 @@ import { interpolate, spring, useCurrentFrame, useVideoConfig } from "remotion";
 import type { MAP_VIEWS, PropsOf } from "../../../src/shared/plan/schema";
 import { outline, texture } from "../styles/styles";
 import { Character } from "./characters";
-import { accentAt, appearStyle, borders, CONTENT_W, ease, ramp, SceneFrame, stageHeight, Surface, useAppear, useRevealFrames, useScene, useStyle } from "./kit";
+import { accentAt, appearStyle, borders, ease, ramp, SceneFrame, Surface, useAppear, useLayout, useRevealFrames, useScene, useStyle } from "./kit";
 import { WORLD_LAND, WORLD_SCALE } from "./world-land";
 
 /* Timeline, map with pins, analogy split-screen and character dialogue. */
@@ -11,11 +11,12 @@ export function TimelineScene({ heading, events }: PropsOf<"timeline">) {
 	const s = useStyle();
 	const frame = useCurrentFrame();
 	const frames = useRevealFrames(events.length);
-	const W = CONTENT_W;
-	const H = stageHeight(heading);
+	const { vertical, contentW: W, stageH } = useLayout();
+	const H = stageH(heading);
 	const n = events.length;
-	const margin = 110;
-	const spacing = (W - 2 * margin) / (n - 1);
+	// Along the width in a wide frame; down the left side, cards to the right, in a tall frame.
+	const margin = vertical ? Math.min(90, H / n / 2) : 110;
+	const spacing = ((vertical ? H : W) - 2 * margin) / (n - 1);
 	const xAt = (k: number) => margin + k * spacing;
 	const y = H / 2;
 	const cardW = Math.min(400, spacing * 1.8);
@@ -27,6 +28,22 @@ export function TimelineScene({ heading, events }: PropsOf<"timeline">) {
 	});
 	const lineEnd = margin + reach * spacing;
 	const start = useAppear(0, { damping: 200 });
+	if (vertical) {
+		const lx = 40;
+		return (
+			<SceneFrame heading={heading} center={!heading}>
+				<div style={{ ...texture(s), position: "relative", width: W, height: H }}>
+					<svg width={W} height={H} style={{ position: "absolute", inset: 0, overflow: "visible" }}>
+						<line x1={lx} x2={lx} y1={20} y2={H - 20} stroke={s.surfaceBorder} strokeWidth={6} strokeLinecap="round" strokeDasharray={s.line.style === "dashed" ? "16 12" : undefined} opacity={start} />
+						<line x1={lx} x2={lx} y1={margin} y2={lineEnd} stroke={s.accent} strokeWidth={8} strokeLinecap="round" />
+					</svg>
+					{events.map((e, k) => (
+						<TimelineEvent key={k} index={k} at={frames[k]!} x={lx} y={xAt(k)} cardW={W - lx - 60} up={false} side date={e.date} label={e.label} detail={e.detail} />
+					))}
+				</div>
+			</SceneFrame>
+		);
+	}
 	return (
 		<SceneFrame heading={heading} center={!heading}>
 			<div style={{ ...texture(s), position: "relative", width: W, height: H }}>
@@ -42,13 +59,28 @@ export function TimelineScene({ heading, events }: PropsOf<"timeline">) {
 	);
 }
 
-function TimelineEvent({ index, at, x, y, cardW, up, date, label, detail }: { index: number; at: number; x: number; y: number; cardW: number; up: boolean; date: string; label: string; detail?: string }) {
+function TimelineEvent({ index, at, x, y, cardW, up, side, date, label, detail }: { index: number; at: number; x: number; y: number; cardW: number; up: boolean; side?: boolean; date: string; label: string; detail?: string }) {
 	const s = useStyle();
 	const p = useAppear(at, { damping: 14 });
 	const color = accentAt(s, index);
+	const dot = <div style={{ position: "absolute", left: x - 20, top: y - 20, width: 40, height: 40, borderRadius: 99, background: s.hand ? s.bg : color, ...borders(`${Math.max(4, s.line.width + 2)}px solid ${s.hand ? color : s.bg}`), transform: `scale(${p})`, boxShadow: s.hand ? "none" : `0 0 0 4px ${color}` }} />;
+	if (side)
+		// Tall frames: the card sits to the right of its dot.
+		return (
+			<>
+				{dot}
+				<div style={{ position: "absolute", left: x + 60, top: y, width: cardW, transform: `translate(${(1 - p) * -20}px, -50%)`, opacity: p }}>
+					<div style={{ display: "flex", alignItems: "baseline", flexWrap: "wrap", columnGap: 20 }}>
+						<div style={{ fontFamily: s.headingFont, fontSize: 44, fontWeight: 800, color }}>{date}</div>
+						<div style={{ fontSize: 36, fontWeight: 700, lineHeight: 1.2 }}>{label}</div>
+					</div>
+					{detail ? <div style={{ fontSize: 30, color: s.muted, lineHeight: 1.3, marginTop: 6 }}>{detail}</div> : null}
+				</div>
+			</>
+		);
 	return (
 		<>
-			<div style={{ position: "absolute", left: x - 20, top: y - 20, width: 40, height: 40, borderRadius: 99, background: s.hand ? s.bg : color, ...borders(`${Math.max(4, s.line.width + 2)}px solid ${s.hand ? color : s.bg}`), transform: `scale(${p})`, boxShadow: s.hand ? "none" : `0 0 0 4px ${color}` }} />
+			{dot}
 			<div style={{ position: "absolute", left: x - 2, top: up ? y - 70 : y + 22, width: 4, height: 48 * p, background: color, opacity: 0.7 }} />
 			<div style={{ position: "absolute", left: x - cardW / 2, width: cardW, top: up ? undefined : y + 72, bottom: up ? `calc(100% - ${y - 72}px)` : undefined, opacity: p, transform: `translateY(${(1 - p) * (up ? 20 : -20)}px)`, textAlign: "center" }}>
 				<div style={{ fontFamily: s.headingFont, fontSize: 40, fontWeight: 800, color, marginBottom: 6 }}>{date}</div>
@@ -76,7 +108,8 @@ const mx = (lon: number) => (lon + 180) * WORLD_SCALE;
 const my = (lat: number) => (90 - lat) * WORLD_SCALE;
 
 /** The map box (in map units) for a view, grown to show every pin and to fill the stage shape. */
-export function mapBox(view: (typeof MAP_VIEWS)[number], pins: { lat: number; lon: number }[], aspect: number) {
+/** The view's region grown to show every pin, in degrees: [west, east, north, south]. */
+function regionOf(view: (typeof MAP_VIEWS)[number], pins: { lat: number; lon: number }[]): [number, number, number, number] {
 	let [w, e, n, so] = VIEWS[view];
 	for (const p of pins) {
 		w = Math.min(w, p.lon - 6);
@@ -84,10 +117,17 @@ export function mapBox(view: (typeof MAP_VIEWS)[number], pins: { lat: number; lo
 		n = Math.max(n, p.lat + 5);
 		so = Math.min(so, p.lat - 5);
 	}
-	w = Math.max(-180, w);
-	e = Math.min(180, e);
-	n = Math.min(85, n);
-	so = Math.max(-85, so);
+	return [Math.max(-180, w), Math.min(180, e), Math.min(85, n), Math.max(-85, so)];
+}
+
+/** Width ÷ height of the region on the map, before it is fitted to the stage. */
+export function regionAspect(view: (typeof MAP_VIEWS)[number], pins: { lat: number; lon: number }[]): number {
+	const [w, e, n, so] = regionOf(view, pins);
+	return (mx(e) - mx(w)) / (my(so) - my(n));
+}
+
+export function mapBox(view: (typeof MAP_VIEWS)[number], pins: { lat: number; lon: number }[], aspect: number) {
+	const [w, e, n, so] = regionOf(view, pins);
 	let x = mx(w);
 	let y = my(n);
 	let bw = mx(e) - x;
@@ -108,8 +148,10 @@ export function MapScene({ heading, view, pins, route }: PropsOf<"map">) {
 	const s = useStyle();
 	const frame = useCurrentFrame();
 	const frames = useRevealFrames(pins.length);
-	const W = CONTENT_W;
-	const H = stageHeight(heading);
+	const { vertical, contentW: W, stageH } = useLayout();
+	// Tall frames: the map keeps the shape of its region (a world map stays wide), not the full height, which would be mostly sea.
+	const natural = regionAspect(view, pins);
+	const H = vertical ? Math.min(stageH(heading), Math.round(W / Math.max(0.8, Math.min(2, natural)))) : stageH(heading);
 	const box = mapBox(view, pins, W / H);
 	const sx = (lon: number) => ((mx(lon) - box.x) / box.w) * W;
 	const sy = (lat: number) => ((my(lat) - box.y) / box.h) * H;
@@ -141,7 +183,7 @@ export function MapScene({ heading, view, pins, route }: PropsOf<"map">) {
 					</svg>
 				) : null}
 				{pins.map((p, k) => (
-					<MapPin key={k} index={k} at={frames[k]!} x={sx(p.lon)} y={sy(p.lat)} label={p.label} detail={p.detail} flip={sx(p.lon) > W - 380} />
+					<MapPin key={k} index={k} at={frames[k]!} x={sx(p.lon)} y={sy(p.lat)} label={p.label} detail={p.detail} flip={sx(p.lon) > W - (vertical ? 300 : 380)} />
 				))}
 			</div>
 		</SceneFrame>
@@ -182,21 +224,24 @@ export function AnalogyScene({ heading, idea, like, pairs, limit }: PropsOf<"ana
 	const link = useAppear(10, { damping: 12 });
 	const limitP = useAppear(limit ? frames[pairs.length]! : null, { damping: 200 });
 	const size = pairs.length > 3 ? 32 : 38;
+	const { vertical } = useLayout();
+	// Tall frames: a narrower link column, so each side keeps room for its words.
+	const cols = vertical ? "1fr 110px 1fr" : "1fr 180px 1fr";
 	return (
 		<SceneFrame heading={heading}>
 			<div style={{ ...texture(s), display: "flex", flexDirection: "column", gap: pairs.length > 3 ? 16 : 24 }}>
-				<div style={{ ...appearStyle(top, 16), display: "grid", gridTemplateColumns: "1fr 180px 1fr", alignItems: "center", marginBottom: 10 }}>
-					<div style={{ fontFamily: s.headingFont, fontSize: 54, fontWeight: 800, color: s.accent, textAlign: "center" }}>{idea}</div>
+				<div style={{ ...appearStyle(top, 16), display: "grid", gridTemplateColumns: cols, alignItems: "center", marginBottom: 10 }}>
+					<div style={{ fontFamily: s.headingFont, fontSize: vertical ? 44 : 54, fontWeight: 800, color: s.accent, textAlign: "center" }}>{idea}</div>
 					<div style={{ textAlign: "center", transform: `scale(${link})` }}>
-						<span style={{ display: "inline-block", padding: "10px 22px", borderRadius: 999, background: s.hand ? "transparent" : s.text, color: s.hand ? s.text : s.bg, border: s.hand ? `3px ${s.line.style} ${s.text}` : "none", fontSize: 26, fontWeight: 800, letterSpacing: 1.5, textTransform: "uppercase" }}>is like</span>
+						<span style={{ display: "inline-block", padding: vertical ? "8px 14px" : "10px 22px", borderRadius: 999, whiteSpace: "nowrap", fontSize: vertical ? 22 : 26, background: s.hand ? "transparent" : s.text, color: s.hand ? s.text : s.bg, border: s.hand ? `3px ${s.line.style} ${s.text}` : "none", fontWeight: 800, letterSpacing: 1.5, textTransform: "uppercase" }}>is like</span>
 					</div>
-					<div style={{ fontFamily: s.headingFont, fontSize: 54, fontWeight: 800, color: s.accent2, textAlign: "center" }}>{like}</div>
+					<div style={{ fontFamily: s.headingFont, fontSize: vertical ? 44 : 54, fontWeight: 800, color: s.accent2, textAlign: "center" }}>{like}</div>
 				</div>
 				{pairs.map((p, i) => (
-					<AnalogyPair key={i} at={frames[i]!} idea={p.idea} like={p.like} size={size} />
+					<AnalogyPair key={i} at={frames[i]!} idea={p.idea} like={p.like} size={size} link={vertical ? 110 : 180} />
 				))}
 				{limit ? (
-					<div style={{ ...appearStyle(limitP, 16), marginTop: 12, display: "flex", gap: 20, alignItems: "baseline", fontSize: 34, lineHeight: 1.35, padding: "18px 28px", borderRadius: Math.min(16, s.radius), background: s.hand ? "transparent" : `${s.accent3}18`, ...borders(`${s.line.width}px ${s.line.style} ${s.accent3}`) }}>
+					<div style={{ ...appearStyle(limitP, 16), marginTop: 12, display: "flex", flexDirection: vertical ? "column" : "row", gap: vertical ? 6 : 20, alignItems: "baseline", fontSize: 34, lineHeight: 1.35, padding: "18px 28px", borderRadius: Math.min(16, s.radius), background: s.hand ? "transparent" : `${s.accent3}18`, ...borders(`${s.line.width}px ${s.line.style} ${s.accent3}`) }}>
 						<span style={{ color: s.accent3, fontWeight: 800, whiteSpace: "nowrap" }}>Where it breaks:</span>
 						<span>{limit}</span>
 					</div>
@@ -206,19 +251,19 @@ export function AnalogyScene({ heading, idea, like, pairs, limit }: PropsOf<"ana
 	);
 }
 
-function AnalogyPair({ at, idea, like, size }: { at: number; idea: string; like: string; size: number }) {
+function AnalogyPair({ at, idea, like, size, link }: { at: number; idea: string; like: string; size: number; link: number }) {
 	const s = useStyle();
 	const frame = useCurrentFrame();
 	const p = useAppear(at);
 	const draw = ramp(frame, at + 4, at + 16);
 	return (
-		<div style={{ ...appearStyle(p, 20), display: "grid", gridTemplateColumns: "1fr 180px 1fr", alignItems: "center" }}>
+		<div style={{ ...appearStyle(p, 20), display: "grid", gridTemplateColumns: `1fr ${link}px 1fr`, alignItems: "center" }}>
 			<Surface edge={{ side: "left", color: s.accent }} style={{ padding: "20px 28px", fontSize: size, lineHeight: 1.3 }}>
 				{idea}
 			</Surface>
-			<svg width={180} height={40} style={{ overflow: "visible" }}>
-				<path d="M 20 20 H 160" stroke={s.muted} strokeWidth={4} strokeDasharray="8 8" strokeLinecap="round" opacity={draw} />
-				<path d="M 34 8 L 20 20 L 34 32 M 146 8 L 160 20 L 146 32" fill="none" stroke={s.muted} strokeWidth={4} strokeLinecap="round" strokeLinejoin="round" opacity={draw} />
+			<svg width={link} height={40} style={{ overflow: "visible" }}>
+				<path d={`M 20 20 H ${link - 20}`} stroke={s.muted} strokeWidth={4} strokeDasharray="8 8" strokeLinecap="round" opacity={draw} />
+				<path d={`M 34 8 L 20 20 L 34 32 M ${link - 34} 8 L ${link - 20} 20 L ${link - 34} 32`} fill="none" stroke={s.muted} strokeWidth={4} strokeLinecap="round" strokeLinejoin="round" opacity={draw} />
 			</svg>
 			<Surface edge={{ side: "left", color: s.accent2 }} style={{ padding: "20px 28px", fontSize: size, lineHeight: 1.3 }}>
 				{like}
@@ -232,7 +277,8 @@ export function DialogueScene({ setting, characters, lines }: PropsOf<"dialogue"
 	const frame = useCurrentFrame();
 	const { timed } = useScene();
 	const frames = useRevealFrames(lines.length);
-	const H = stageHeight();
+	const { vertical, contentW, stageH } = useLayout();
+	const H = stageH();
 	const k = frames.filter((f) => f <= frame).length - 1;
 	// The speaker of the newest line talks until that sentence ends (or the next line starts).
 	const startAt = k >= 0 ? frames[k]! : -1;
@@ -244,7 +290,7 @@ export function DialogueScene({ setting, characters, lines }: PropsOf<"dialogue"
 	const charW = 300;
 	return (
 		<SceneFrame center>
-			<div style={{ position: "relative", width: CONTENT_W, height: H }}>
+			<div style={{ position: "relative", width: contentW, height: H }}>
 				{setting ? (
 					<div style={{ ...appearStyle(intro, 10), position: "absolute", left: 0, right: 0, top: 0, textAlign: "center", fontSize: 30, color: s.muted, letterSpacing: s.hand ? 0 : 2, textTransform: "uppercase" }}>{setting}</div>
 				) : null}
@@ -266,10 +312,11 @@ export function DialogueScene({ setting, characters, lines }: PropsOf<"dialogue"
 					style={{
 						...texture(s),
 						position: "absolute",
-						left: charW + 70,
-						right: two ? charW + 70 : 40,
+						// Tall frames: the characters stand at the bottom and the talk fills the space above them.
+						left: vertical ? 0 : charW + 70,
+						right: vertical ? 0 : two ? charW + 70 : 40,
 						top: setting ? 70 : 20,
-						bottom: 40,
+						bottom: vertical ? charW * 1.5 + 90 : 40,
 						display: "flex",
 						flexDirection: "column",
 						justifyContent: "flex-end",

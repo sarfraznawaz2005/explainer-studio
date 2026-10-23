@@ -12,7 +12,7 @@ export const TONES = ["Friendly", "Calm", "Enthusiastic", "Storyteller", "Neutra
 export const Tone = z.enum(TONES);
 export type Tone = z.infer<typeof Tone>;
 
-/** Narration languages. The voice reads English only for now; other languages get script and captions. */
+/** Narration languages. Kokoro voices speak English, Spanish, French, Portuguese and Hindi; Piper voices speak Urdu; the rest are read by an English voice. */
 export const LANGUAGES = [
 	{ code: "en", label: "English" },
 	{ code: "es", label: "Spanish" },
@@ -27,16 +27,37 @@ export const LANGUAGES = [
 export const LanguageCode = z.enum(LANGUAGES.map((l) => l.code) as [string, ...string[]]);
 export const languageLabel = (code: string) => LANGUAGES.find((l) => l.code === code)?.label ?? code;
 
-/** Target lengths offered in the wizard, in minutes. null = as long as the material needs. */
-export const TARGET_MINUTES = [3, 5, 8, 10, 15, 20, 30, 45, 60] as const;
+/** Target lengths offered in the wizard, in minutes (80 seconds = 4/3). null = as long as the material needs. */
+export const TARGET_MINUTES = [30, 45, 60, 80, 90, 120, 180, 300, 480, 600, 900, 1200, 1800, 2700, 3600].map((s) => s / 60);
+
+/** "45 seconds", "1 min 20 s", "5 minutes". */
+export function lengthLabel(minutes: number): string {
+	const total = Math.round(minutes * 60);
+	if (total < 60) return `${total} seconds`;
+	const m = Math.floor(total / 60);
+	const s = total % 60;
+	return s ? `${m} min ${s} s` : `${m} minute${m === 1 ? "" : "s"}`;
+}
+
+/** Picture shape. Vertical is for Shorts, TikTok and Reels (phones held upright). */
+export const VIDEO_FORMATS = {
+	landscape: { label: "Wide 16:9", hint: "YouTube, web", width: 1920, height: 1080 },
+	vertical: { label: "Vertical 9:16", hint: "Shorts, TikTok, Reels", width: 1080, height: 1920 },
+} as const;
+export const VideoFormat = z.enum(["landscape", "vertical"]);
+export type VideoFormat = z.infer<typeof VideoFormat>;
+export const formatOf = (meta: { width: number; height: number }): VideoFormat => (meta.height > meta.width ? "vertical" : "landscape");
 
 export const PlanSettings = z.object({
+	format: VideoFormat.default("landscape"),
 	level: Level,
 	language: LanguageCode.default("en"),
 	tone: Tone.default("Friendly"),
-	targetMinutes: z.number().int().min(1).max(180).nullable().default(null),
+	targetMinutes: z.number().min(0.5).max(180).nullable().default(null),
 	voice: z.string().regex(/^[a-z]{2}_[a-z0-9]{1,24}$/).optional(),
 	style: z.union([StyleId, z.literal("auto")]).default("auto"),
+	/** Before the script: find free photos of real people, places and things on the web (Wikidata, Openverse, NASA). */
+	webPictures: z.boolean().default(true),
 });
 export type PlanSettings = z.infer<typeof PlanSettings>;
 export type PlanSettingsInput = z.input<typeof PlanSettings>;
@@ -51,7 +72,7 @@ export const OutlineChapter = z.object({
 	keyPoints: z.array(line(200)).min(1).max(10),
 	/** Source section ids this chapter is built from ("s3"). */
 	sources: z.array(z.string().max(16)).max(60).default([]),
-	minutes: z.number().min(0.5).max(60),
+	minutes: z.number().min(0.25).max(60),
 });
 export type OutlineChapter = z.infer<typeof OutlineChapter>;
 
@@ -71,6 +92,20 @@ export const Outline = z.object({
 });
 export type Outline = z.infer<typeof Outline>;
 export type OutlineInput = z.input<typeof Outline>;
+
+/** "Make a video about X": the AI writes the material from a topic. */
+export const TopicRequest = z.object({
+	topic: z.string().trim().min(3, "Describe the topic in a few words").max(500),
+	level: Level,
+	minutes: z.number().min(0.5).max(60),
+	/** Points to cover, examples to use, things to skip. */
+	instructions: z.string().trim().max(3000).default(""),
+	language: LanguageCode.default("en"),
+	tone: Tone.default("Friendly"),
+	format: VideoFormat.default("landscape"),
+});
+export type TopicRequest = z.infer<typeof TopicRequest>;
+export type TopicRequestInput = z.input<typeof TopicRequest>;
 
 /* ---------- Quality report ---------- */
 
@@ -116,8 +151,8 @@ export type QualityReport = z.infer<typeof QualityReport>;
 
 /* ---------- Cost and time estimate ---------- */
 
-/** outline and script run from the wizard; scene and chapter are Studio rewrites of one part. */
-export const PlanStep = z.enum(["outline", "script", "scene", "chapter"]);
+/** outline and script run from the wizard; scene and chapter are Studio rewrites of one part; research writes material from a topic. */
+export const PlanStep = z.enum(["outline", "script", "scene", "chapter", "research", "pictures"]);
 export type PlanStep = z.infer<typeof PlanStep>;
 
 export const Estimate = z.object({

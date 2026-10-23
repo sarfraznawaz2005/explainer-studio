@@ -1,7 +1,7 @@
 import { interpolate, useCurrentFrame } from "remotion";
 import type { PropsOf } from "../../../src/shared/plan/schema";
 import { outline, texture } from "../styles/styles";
-import { accentAt, appearStyle, borders, CONTENT_W, ease, ramp, SceneFrame, stageHeight, useAppear, useRevealFrames, useStyle } from "./kit";
+import { accentAt, appearStyle, borders, ease, ramp, SceneFrame, useAppear, useLayout, useRevealFrames, useStyle } from "./kit";
 
 /* Algorithm trace (array boxes and pointers) and table build-up. */
 
@@ -29,14 +29,16 @@ export function TraceScene({ heading, array, steps }: PropsOf<"trace">) {
 	const s = useStyle();
 	const frame = useCurrentFrame();
 	const frames = useRevealFrames(steps.length, ["focus"]);
-	const H = stageHeight(heading);
+	const { vertical, contentW: CONTENT_W, stageH } = useLayout();
+	const H = vertical ? Math.min(stageH(heading), 900) : stageH(heading);
 	const n = array.length;
-	const box = n <= 8 ? 140 : n <= 10 ? 120 : 104;
 	const gap = n <= 8 ? 18 : 12;
+	// Boxes shrink to keep the row inside the width (tall frames are narrow).
+	const box = Math.min(n <= 8 ? 140 : n <= 10 ? 120 : 104, Math.floor((CONTENT_W - (n - 1) * gap) / n));
 	const rowW = n * box + (n - 1) * gap;
 	const left = (CONTENT_W - rowW) / 2;
 	const slotX = (slot: number) => left + slot * (box + gap);
-	const rowY = Math.round(H * 0.24);
+	const rowY = Math.round(H * (vertical ? 0.3 : 0.24));
 	// k = index of the current step (-1 before the first focus).
 	const k = frames.filter((f) => f <= frame).length - 1;
 	const states = traceStates(array, steps);
@@ -140,9 +142,12 @@ export function TableScene({ heading, columns, rows, highlight }: PropsOf<"table
 	const s = useStyle();
 	const frame = useCurrentFrame();
 	const frames = useRevealFrames(rows.length);
-	const H = stageHeight(heading);
-	const rowH = Math.min(92, (H - 100) / rows.length);
-	const size = columns.length >= 6 ? 28 : columns.length >= 4 ? 33 : 40;
+	const { vertical, contentW: CONTENT_W, stageH } = useLayout();
+	const H = stageH(heading);
+	// Tall frames: narrow columns, so smaller text and taller rows for wrapped words.
+	const rowH = Math.min(vertical ? 120 : 92, (H - 100) / rows.length);
+	const size = vertical ? (columns.length >= 4 ? 26 : columns.length === 3 ? 32 : 38) : columns.length >= 6 ? 28 : columns.length >= 4 ? 33 : 40;
+	const padX = vertical ? 18 : 26;
 	const head = useAppear(0, { damping: 200 });
 	const hiOn = highlight && frames[highlight.row] !== undefined ? ramp(frame, frames[highlight.row]! + 14, frames[highlight.row]! + 24) : 0;
 	const cellBorder = outline(s, s.surfaceBorder);
@@ -151,7 +156,7 @@ export function TableScene({ heading, columns, rows, highlight }: PropsOf<"table
 			<div style={{ ...texture(s), width: CONTENT_W, borderRadius: s.radius, overflow: "hidden", boxShadow: s.shadow, ...borders(cellBorder), background: s.surface }}>
 				<div style={{ display: "flex", background: s.hand ? "transparent" : s.accent, color: s.hand ? s.accent : s.onAccent, opacity: head, borderBottom: s.hand ? `${s.line.width + 1}px ${s.line.style} ${s.accent}` : "none" }}>
 					{columns.map((c, i) => (
-						<div key={i} style={{ flex: 1, minWidth: 0, padding: "22px 26px", fontSize: size, fontWeight: 800, letterSpacing: s.hand ? 0 : 0.5 }}>
+						<div key={i} style={{ flex: 1, minWidth: 0, padding: `22px ${padX}px`, fontSize: size, fontWeight: 800, letterSpacing: s.hand ? 0 : 0.5 }}>
 							{c}
 						</div>
 					))}
@@ -175,7 +180,7 @@ export function TableScene({ heading, columns, rows, highlight }: PropsOf<"table
 							{columns.map((_, ci) => {
 								const hot = highlight?.row === ri && highlight.col === ci;
 								return (
-									<div key={ci} style={{ flex: 1, minWidth: 0, height: "100%", display: "flex", alignItems: "center", padding: "0 26px", fontSize: size, lineHeight: 1.2, fontWeight: ci === 0 ? 700 : 400, background: hot && hiOn ? `${s.accent2}${s.dark ? "44" : "2a"}` : "transparent", boxShadow: hot && hiOn ? `inset 0 0 0 ${4 * hiOn}px ${s.accent2}` : "none" }}>
+									<div key={ci} style={{ flex: 1, minWidth: 0, height: "100%", display: "flex", alignItems: "center", padding: `0 ${padX}px`, fontSize: size, lineHeight: 1.2, fontWeight: ci === 0 ? 700 : 400, background: hot && hiOn ? `${s.accent2}${s.dark ? "44" : "2a"}` : "transparent", boxShadow: hot && hiOn ? `inset 0 0 0 ${4 * hiOn}px ${s.accent2}` : "none" }}>
 										{r[ci] ?? ""}
 									</div>
 								);

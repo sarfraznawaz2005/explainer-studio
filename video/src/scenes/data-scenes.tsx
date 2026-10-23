@@ -2,7 +2,7 @@ import { interpolate, useCurrentFrame } from "remotion";
 import type { PropsOf } from "../../../src/shared/plan/schema";
 import { texture } from "../styles/styles";
 import { highlight } from "./highlight";
-import { appearStyle, SceneFrame, stageHeight, Surface, useActiveCue, useAppear, useRevealAt, useScene, useStyle } from "./kit";
+import { appearStyle, SceneFrame, Surface, useActiveCue, useAppear, useLayout, useRevealAt, useScene, useStyle } from "./kit";
 import { PieChart } from "./math-scenes";
 
 const fmt = (v: number) => (Math.abs(v) >= 1000 ? v.toLocaleString("en-US", { maximumFractionDigits: 0 }) : String(Math.round(v * 10) / 10));
@@ -10,8 +10,9 @@ const fmt = (v: number) => (Math.abs(v) >= 1000 ? v.toLocaleString("en-US", { ma
 function Bar({ index, label, value, max, unit, highlighted, count }: { index: number; label: string; value: number; max: number; unit?: string; highlighted: boolean; count: number }) {
 	const s = useStyle();
 	const p = useAppear(useRevealAt(index), { damping: 16 });
+	const tallest = useLayout().vertical ? 760 : 520;
 	// Keep tiny values visible as a sliver so the bar is still readable.
-	const h = (value > 0 ? Math.max(6, (value / max) * 520) : 0) * p;
+	const h = (value > 0 ? Math.max(6, (value / max) * tallest) : 0) * p;
 	const color = highlighted ? s.accent2 : s.accent;
 	return (
 		<div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "flex-end", gap: 18, minWidth: 0 }}>
@@ -80,11 +81,12 @@ function LineChart({ data, max, unit, highlight: hi }: { data: { label: string; 
 export function ChartScene({ heading, kind, unit, data, highlight: hi }: PropsOf<"chart">) {
 	const s = useStyle();
 	const max = Math.max(...data.map((d) => d.value), 1) * 1.08;
+	const { stageH } = useLayout();
 	if (kind === "pie")
 		return (
 			<SceneFrame heading={heading} center={!heading}>
 				<div style={texture(s)}>
-					<PieChart data={data} unit={unit} highlight={hi} height={stageHeight(heading)} />
+					<PieChart data={data} unit={unit} highlight={hi} height={stageH(heading)} />
 				</div>
 			</SceneFrame>
 		);
@@ -110,15 +112,18 @@ export function CodeScene({ heading, language, code, steps }: PropsOf<"code">) {
 	const focusAt = useRevealAt(Math.max(0, active), ["focus"]);
 	const noteP = useAppear(step ? focusAt : null, { damping: 200 });
 	const hasNotes = steps.some((st) => st.note);
+	// Tall frames put the note under the code, so the code gets the full width.
+	const { vertical, contentW } = useLayout();
+	const side = hasNotes && !vertical;
 	// Fit the longest line: monospace glyphs are about 0.6em wide. Code area width depends on the notes column.
-	const codeWidth = hasNotes ? 1596 * (1.7 / 2.7) - 152 : 1640 - 152;
+	const codeWidth = side ? (contentW - 44) * (1.7 / 2.7) - 152 : contentW - 152;
 	const longest = Math.max(1, ...lines.map((l) => l.reduce((n, t) => n + t.text.length, 0)));
 	const size = Math.max(18, Math.min(lines.length > 16 ? 26 : lines.length > 11 ? 30 : 36, Math.floor(codeWidth / (0.6 * longest))));
 	const color = (k: string) => (k === "text" ? s.code.text : s.code[k as keyof typeof s.code] as string);
 	return (
 		<SceneFrame heading={heading}>
-			<div style={{ display: "flex", gap: 44, flex: 1, minHeight: 0, alignItems: "flex-start" }}>
-				<div style={{ ...appearStyle(box, 24), flex: 1.7, minWidth: 0 }}>
+			<div style={{ display: "flex", flexDirection: vertical ? "column" : "row", gap: 44, flex: vertical ? undefined : 1, minHeight: 0, alignItems: vertical ? "stretch" : "flex-start" }}>
+				<div style={{ ...appearStyle(box, 24), flex: vertical ? undefined : 1.7, minWidth: 0 }}>
 					<Surface bare={!s.dark && s.code.bg === "#16161d"} style={{ background: s.code.bg, padding: "34px 0", overflow: "hidden" }}>
 						<div style={{ display: "flex", gap: 10, padding: "0 34px 22px" }}>
 							{["#ff5f57", "#febc2e", "#28c840"].map((c) => (
@@ -146,7 +151,7 @@ export function CodeScene({ heading, language, code, steps }: PropsOf<"code">) {
 						</div>
 					</Surface>
 				</div>
-				<div style={{ ...texture(s), flex: 1, minWidth: 0, display: hasNotes ? "flex" : "none", flexDirection: "column", gap: 20 }}>
+				<div style={{ ...texture(s), flex: vertical ? undefined : 1, minWidth: 0, minHeight: vertical ? 220 : undefined, display: hasNotes ? "flex" : "none", flexDirection: "column", gap: 20 }}>
 					{step?.note ? (
 						<div style={appearStyle(noteP, 20)}>
 							<div style={{ fontSize: 26, letterSpacing: 3, color: s.accent, fontWeight: 700, marginBottom: 14 }}>

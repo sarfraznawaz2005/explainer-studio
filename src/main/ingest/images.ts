@@ -48,6 +48,38 @@ export function imageSize(buf: Buffer): { width: number; height: number } {
 	return { width: 0, height: 0 };
 }
 
+/** A JPEG's EXIF rotation tag (1 = upright, 6 = turned right, 8 = turned left, ...). 1 when there is none. */
+export function jpegOrientation(buf: Buffer): number {
+	if (buf.length < 4 || buf[0] !== 0xff || buf[1] !== 0xd8) return 1;
+	let i = 2;
+	while (i + 4 < buf.length && buf[i] === 0xff) {
+		const marker = buf[i + 1]!;
+		const len = buf.readUInt16BE(i + 2);
+		if (marker === 0xda) break;
+		if (marker === 0xe1 && buf.toString("ascii", i + 4, i + 8) === "Exif") {
+			const t = i + 10;
+			if (t + 8 > buf.length) return 1;
+			const le = buf.toString("ascii", t, t + 2) === "II";
+			const u16 = (o: number) => (le ? buf.readUInt16LE(o) : buf.readUInt16BE(o));
+			const u32 = (o: number) => (le ? buf.readUInt32LE(o) : buf.readUInt32BE(o));
+			const ifd = t + u32(t + 4);
+			if (ifd + 2 > buf.length) return 1;
+			const n = u16(ifd);
+			for (let k = 0; k < n; k++) {
+				const e = ifd + 2 + k * 12;
+				if (e + 10 > buf.length) return 1;
+				if (u16(e) === 0x0112) {
+					const v = u16(e + 8);
+					return v >= 1 && v <= 8 ? v : 1;
+				}
+			}
+			return 1;
+		}
+		i += 2 + len;
+	}
+	return 1;
+}
+
 /**
  * Saves images into `<draftDir>/source/figures`. Relative paths are resolved
  * against the document's folder and must stay inside it (no ../ escapes).

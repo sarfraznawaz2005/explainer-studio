@@ -39,6 +39,10 @@ describe("render settings and outputs", () => {
 		expect(outputSize(meta, "1080p")).toMatchObject({ width: 1920, height: 1080, scale: 1 });
 		expect(outputSize(meta, "1440p")).toMatchObject({ width: 2560, height: 1440 });
 		expect(outputSize(meta, "2160p")).toMatchObject({ width: 3840, height: 2160, scale: 2 });
+		// Vertical: the resolution is the short side, as players name it.
+		const tall = { width: 1080, height: 1920 };
+		expect(outputSize(tall, "1080p")).toMatchObject({ width: 1080, height: 1920, scale: 1 });
+		expect(outputSize(tall, "720p")).toMatchObject({ width: 720, height: 1280 });
 		expect(() => RenderSettings.parse({ fps: 24 })).toThrow();
 	});
 

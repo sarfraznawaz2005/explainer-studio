@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { mkdir, rm, stat } from "node:fs/promises";
 import { basename, isAbsolute, join, relative } from "node:path";
 import { ingestEvents, type IngestItemInput, type IngestUpdate, type Level, type OcrMode, type PickedFile } from "@shared/ipc/ingest";
+import type { Estimate, TopicRequest } from "@shared/planner";
 import { kindOfFile } from "@shared/source";
 import { ai } from "../ai";
 import { appFolders } from "../app/folders";
@@ -11,6 +12,10 @@ import { repos } from "../db/repos";
 import { redact } from "../security/redact";
 import { normalisePath } from "../security/path-guard";
 import { voiceEngine } from "../voice";
+import { describeProviderError } from "../ai/providers/errors";
+import { plannerAiFrom } from "../planner/ai";
+import { priced } from "../planner/jobs";
+import { topicCalls, writeTopicNotes } from "./topic";
 import { ingest, type IngestDeps } from "./ingest";
 import type { VisionAsk } from "./ocr";
 import { pdfPageCount } from "./pdf-text";
@@ -107,6 +112,51 @@ export function startIngest(req: { items: IngestItemInput[]; ocr: OcrMode; level
 			}
 		} finally {
 			await removeInside(folders.cache, tmpDir).catch(() => {});
+		}
+	})();
+	return jobId;
+}
+
+/** Cost and time of writing material from a topic. */
+export const estimateTopic = (req: TopicRequest): Promise<Estimate> => priced("research", topicCalls(req));
+
+/** The AI writes the material from a topic, then it is saved as a draft like read files. The wizard opens with the topic's settings. */
+export async function startTopic(req: TopicRequest & { confirmedCost: boolean }): Promise<string> {
+	if (!req.confirmedCost && (await estimateTopic(req)).needsConfirm) throw new Error("This run may cost money. Confirm the estimate first.");
+	const jobId = randomUUID();
+	const draftId = randomUUID();
+	const abort = new AbortController();
+	const draftDir = join(appFolders().drafts, draftId);
+	jobs.set(jobId, { abort, last: { jobId, state: "running", progress: null } });
+	emit({ jobId, state: "running", progress: null });
+	writeLog("ingest", "info", `topic job ${jobId}: ${req.minutes} min, ${req.level}`);
+	const name = req.topic.slice(0, 80);
+	const tell = (progress: number, detail: string) => emit({ jobId, state: "running", progress: { fileIndex: 0, fileCount: 1, fileName: name, stage: "research", progress, detail } });
+
+	void (async () => {
+		try {
+			// Created up front because drafts own a folder; it stays empty (no figures).
+			await mkdir(draftDir, { recursive: true });
+			tell(0, "Planning the sections");
+			// No draft link on the usage rows: the draft row is only created at the end, and ai_usage.draft_id must point to a real draft.
+			const source = await writeTopicNotes(req, plannerAiFrom(ai(), null, abort.signal), {
+				signal: abort.signal,
+				onProgress: (p) => (p.step === "plan" ? tell(0.05, "Planning the sections") : tell(0.1 + (0.85 * p.done) / p.total, `Writing section ${Math.min(p.done + 1, p.total)} of ${p.total}`)),
+			});
+			tell(0.97, "Saving the draft");
+			const settings = { format: req.format, level: req.level, language: req.language, tone: req.tone, targetMinutes: req.minutes, style: "auto" as const, webPictures: true };
+			repos.drafts.create({ id: draftId, title: source.title || "Untitled", level: req.level, stage: "source", source, plan: null, settings, seriesId: null, brandKitId: null });
+			writeLog("ingest", "info", `topic job ${jobId} done: draft ${draftId}, ${source.sections.length} sections, ${source.stats.words} words`);
+			emit({ jobId, state: "done", progress: jobs.get(jobId)?.last.progress ?? null, draftId });
+		} catch (err) {
+			await removeInside(appFolders().drafts, draftDir).catch(() => {});
+			if (abort.signal.aborted) {
+				writeLog("ingest", "info", `topic job ${jobId} cancelled`);
+				emit({ jobId, state: "cancelled", progress: jobs.get(jobId)?.last.progress ?? null });
+			} else {
+				writeLog("ingest", "error", `topic job ${jobId} failed`, err);
+				emit({ jobId, state: "error", progress: jobs.get(jobId)?.last.progress ?? null, error: redact(`Writing failed: ${describeProviderError(err).message || String(err)}`) });
+			}
 		}
 	})();
 	return jobId;

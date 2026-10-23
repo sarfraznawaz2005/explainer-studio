@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ComponentType } from "react";
-import { AbsoluteFill, Audio, continueRender, delayRender, interpolate, Sequence, useCurrentFrame } from "remotion";
+import { AbsoluteFill, Audio, continueRender, delayRender, interpolate, Sequence, useCurrentFrame, useVideoConfig } from "remotion";
 import { VideoPlan, type Scene, type SceneType, type StyleId, type VideoPlanInput } from "../../../src/shared/plan/schema";
 import { musicVolumeAt, type MusicSpan, type Soundtrack } from "../../../src/shared/plan/soundtrack";
 import { computeTimeline, type TimedScene, type Timeline } from "../../../src/shared/plan/timing";
@@ -17,6 +17,7 @@ import { BulletsScene, ChapterScene, DefinitionScene, ProblemCard, TitleScene } 
 import { styleFor, type BrandColors, type VisualStyle } from "../styles/styles";
 import { BrandIntro, BrandOutro, Watermark } from "./BrandLayer";
 import { brandFontStack, type BrandStamp } from "../../../src/shared/brand";
+import type { FigureMeta } from "../../../src/shared/source";
 
 export type PlanVideoProps = {
 	plan: VideoPlanInput;
@@ -28,6 +29,8 @@ export type PlanVideoProps = {
 	soundtrack?: Soundtrack;
 	/** URL prefix for source figures (scene props hold the file name). None = placeholders. */
 	figureBase?: string;
+	/** Picture details by file name: size, subject position, photo or not, short credit. None = every figure keeps its frame. */
+	figureMeta?: Record<string, FigureMeta>;
 	/** Colours for the "brand" style. */
 	brand?: BrandColors;
 };
@@ -92,8 +95,11 @@ export function useFonts(style: VisualStyle, extra?: string) {
 
 function ChapterProgress({ timeline, style }: { timeline: Timeline; style: VisualStyle }) {
 	const frame = useCurrentFrame();
+	// Vertical: above the phone app's captions and buttons at the bottom.
+	const { width, height } = useVideoConfig();
+	const tall = height > width;
 	return (
-		<div style={{ position: "absolute", left: 140, right: 140, bottom: 44, display: "flex", gap: 10, opacity: 0.9 }}>
+		<div style={{ position: "absolute", left: tall ? 72 : 140, right: tall ? 72 : 140, bottom: tall ? 290 : 44, display: "flex", gap: 10, opacity: 0.9 }}>
 			{timeline.chapters.map((c) => {
 				const p = interpolate(frame, [c.from, c.from + c.durationInFrames], [0, 1], { extrapolateLeft: "clamp", extrapolateRight: "clamp" });
 				return (
@@ -197,7 +203,7 @@ function BrandLayer({ b, timeline, dark }: { b: BrandStamp; timeline: Timeline; 
 }
 
 /** The whole video: background, one Sequence per scene, chapter progress bar, brand layer. */
-export function PlanVideo({ plan: input, style: override, audioBase, soundtrack, figureBase, brand }: PlanVideoProps) {
+export function PlanVideo({ plan: input, style: override, audioBase, soundtrack, figureBase, figureMeta, brand }: PlanVideoProps) {
 	const parsed = usePlan(input);
 	const id = override ?? ("plan" in parsed ? parsed.plan.meta.style : "clean");
 	const stamp = "plan" in parsed ? parsed.plan.meta.brand : undefined;
@@ -212,7 +218,7 @@ export function PlanVideo({ plan: input, style: override, audioBase, soundtrack,
 			<Background />
 			{timeline.scenes.map((t) => (
 				<Sequence key={t.scene.id} from={t.from} durationInFrames={t.durationInFrames} name={`${t.scene.type}: ${t.scene.id}`}>
-					<SceneProvider value={{ timed: t, style, figureBase }}>
+					<SceneProvider value={{ timed: t, style, figureBase, figureMeta }}>
 						<SceneView scene={t.scene} />
 					</SceneProvider>
 					{audioBase ? <SceneVoice timed={t} audioBase={audioBase} fps={timeline.fps} /> : null}

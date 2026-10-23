@@ -70,10 +70,12 @@ export function BrandIntro({ b }: { b: BrandStamp }) {
 	const tag = spring({ frame: frame - 18, fps, config: { damping: 200 } });
 	const bar = interpolate(frame, [10, 34], [0, 1], clamp);
 	const out = useFadeOut(10);
+	const { width, height } = useVideoConfig();
+	const tall = height > width;
 	return (
 		<AbsoluteFill style={{ background: p.bg, color: p.text, fontFamily: p.font, opacity: out, overflow: "hidden" }} data-brand="intro">
 			<Glow b={b} />
-			<AbsoluteFill style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 34 }}>
+			<AbsoluteFill style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 34, padding: tall ? "0 72px" : undefined, textAlign: tall ? "center" : undefined }}>
 				<div style={{ transform: `scale(${0.4 + 0.6 * logo})`, opacity: Math.min(1, logo * 1.4) }}>
 					<Logo b={b} size={180} />
 				</div>
@@ -111,8 +113,11 @@ export function BrandOutro({ b }: { b: BrandStamp }) {
 	const c = spring({ frame: frame - 12, fps, config: { damping: 12 } });
 	const zones = spring({ frame: frame - 6, fps, config: { damping: 200 } });
 	const out = useFadeOut(12);
+	const { width, height } = useVideoConfig();
+	const tall = height > width;
 	// With an end screen the words sit on the left, leaving the right for YouTube's elements.
-	const left = b.endScreen;
+	// Vertical videos (Shorts, TikTok, Reels) have no end screens: the words stay centred.
+	const left = b.endScreen && !tall;
 	return (
 		<AbsoluteFill style={{ background: p.bg, color: p.text, fontFamily: p.font, opacity: out, overflow: "hidden" }} data-brand="outro">
 			<Glow b={b} />
@@ -121,8 +126,8 @@ export function BrandOutro({ b }: { b: BrandStamp }) {
 					position: "absolute",
 					top: 0,
 					bottom: 0,
-					left: left ? 150 : 0,
-					right: left ? 960 : 0,
+					left: left ? 150 : tall ? 72 : 0,
+					right: left ? 960 : tall ? 72 : 0,
 					display: "flex",
 					flexDirection: "column",
 					justifyContent: "center",
@@ -160,7 +165,7 @@ export function BrandOutro({ b }: { b: BrandStamp }) {
 					</div>
 				) : null}
 			</div>
-			{b.endScreen ? (
+			{left ? (
 				<div style={{ position: "absolute", right: 150, top: 230, width: 720, opacity: zones }} data-brand="end-screen">
 					{/* Framed space for YouTube's end screen elements. YouTube draws them on top. */}
 					<div style={{ width: 720, height: 405, borderRadius: 22, border: `4px dashed ${b.colors.primary}88`, background: `${b.colors.primary}0d`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 30, color: p.muted }}>Watch next</div>
@@ -179,19 +184,22 @@ const MARK_SIZE = { small: 60, medium: 84, large: 120 } as const;
 /** Small logo in a corner while the scenes play. Stays clear of the chapter progress bar. */
 export function Watermark({ b, dark }: { b: BrandStamp; dark: boolean }) {
 	const frame = useCurrentFrame();
-	const { durationInFrames } = useVideoConfig();
+	const { durationInFrames, width, height } = useVideoConfig();
+	// Vertical: below the phone app's own bar at the top.
+	const tall = height > width;
 	const w = b.watermark;
 	const fade = interpolate(frame, [0, 15, durationInFrames - 15, durationInFrames], [0, 1, 1, 0], clamp);
 	const size = MARK_SIZE[w.size];
-	const top = w.corner.startsWith("top");
+	// Vertical: the phone app puts its buttons in the lower corners, so the mark goes to the top.
+	const top = w.corner.startsWith("top") || tall;
 	const leftSide = w.corner.endsWith("left");
 	return (
 		<div
 			data-brand="watermark"
 			style={{
 				position: "absolute",
-				[top ? "top" : "bottom"]: top ? 50 : 84,
-				[leftSide ? "left" : "right"]: 60,
+				[top ? "top" : "bottom"]: top ? (tall ? 170 : 50) : 84,
+				[leftSide ? "left" : "right"]: tall ? 48 : 60,
 				opacity: w.opacity * fade,
 				display: "flex",
 				alignItems: "center",

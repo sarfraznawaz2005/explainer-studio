@@ -8,8 +8,8 @@ export type PlannerAi = {
 	structured<S extends z.ZodType>(req: StructuredRequest<S>, call: { slot: ModelSlot; purpose: string; maxOutputTokens?: number }): Promise<z.output<S>>;
 };
 
-/** The app's AI service, tied to one draft and one cancel signal. */
-export function plannerAiFrom(service: AiService, draftId: string, signal?: AbortSignal): PlannerAi {
+/** The app's AI service, tied to one draft (null: no draft row yet) and one cancel signal. */
+export function plannerAiFrom(service: AiService, draftId: string | null, signal?: AbortSignal): PlannerAi {
 	return {
 		async structured(req, call) {
 			const r = await service.generateStructured(req, { slot: call.slot, purpose: call.purpose, draftId, abortSignal: signal, maxOutputTokens: call.maxOutputTokens });

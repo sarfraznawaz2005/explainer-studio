@@ -12,10 +12,12 @@ import {
 	Image as ImageIcon,
 	Keyboard,
 	Layers,
+	Lightbulb,
 	Loader2,
 	Plus,
 	RotateCcw,
 	ScanText,
+	Sparkles,
 	Square,
 	Trash2,
 	UploadCloud,
@@ -24,17 +26,20 @@ import {
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { ingestChannels as ch, LEVELS, type Capabilities, type DraftView, type OcrMode } from "@shared/ipc/ingest";
+import { plannerChannels as pc } from "@shared/ipc/planner";
+import { LANGUAGES, lengthLabel, TARGET_MINUTES, TONES, TopicRequest, VIDEO_FORMATS, type Estimate, type VideoFormat } from "@shared/planner";
 import { countWords, parsePageRange, type InputKind, type Source } from "@shared/source";
 import { Button } from "@renderer/components/ui/button";
 import { confirm } from "@renderer/components/ui/confirm";
 import { Dialog, DialogContent, DialogFooter } from "@renderer/components/ui/dialog";
+import { Segmented } from "@renderer/components/ui/misc";
 import { Badge, Card, CardContent, CardDescription, CardHeader, CardTitle, Input, Label, PageHeader, Textarea, Tooltip } from "@renderer/components/ui/primitives";
 import { Select } from "@renderer/components/ui/select";
 import { bytes } from "@renderer/lib/format";
 import { call, errorText } from "@renderer/lib/ipc";
 import { cn } from "@renderer/lib/utils";
 import { isRunning, newItemId, useIngest, type Item } from "@renderer/stores/ingest";
-import { PlanWizard } from "./plan-wizard";
+import { confirmCost, EstimateCard, PlanWizard } from "./plan-wizard";
 
 const TYPES = [
 	{ icon: FileText, label: "PDF" },
@@ -281,11 +286,12 @@ function MaterialCard({ caps }: { caps: Capabilities | null }) {
 	);
 }
 
-const STAGE_LABEL: Record<string, string> = { text: "Reading the text layer", figures: "Finding pictures and figures", ocr: "Reading scanned pages", pages: "Reading pages", saving: "Putting it together" };
+const STAGE_LABEL: Record<string, string> = { text: "Reading the text layer", figures: "Finding pictures and figures", ocr: "Reading scanned pages", pages: "Reading pages", saving: "Putting it together", research: "Writing" };
 const METHOD_LABEL: Record<string, string> = { vision: "AI vision", "local-ocr": "this PC", text: "text layer" };
 
 function ReadingPanel() {
-	const { update, tracks, items, jobId } = useIngest();
+	const { update, tracks, items, jobId, mode } = useIngest();
+	const topic = mode === "topic";
 	const p = update?.progress;
 	const pct = Math.round((p?.progress ?? 0) * 100);
 	const file = p ? items.filter((i) => i.kind === "file" || i.kind === "text")[p.fileIndex] : undefined;
@@ -299,7 +305,11 @@ function ReadingPanel() {
 		}
 	}, [file]);
 	const stop = async () => {
-		const ok = await confirm({ title: "Stop reading?", description: "The material read so far is thrown away. Nothing is saved.", confirmLabel: "Stop reading", cancelLabel: "Keep reading", tone: "danger" });
+		const ok = await confirm(
+			topic
+				? { title: "Stop writing?", description: "The material written so far is thrown away. Nothing is saved. AI calls already made still count.", confirmLabel: "Stop writing", cancelLabel: "Keep writing", tone: "danger" }
+				: { title: "Stop reading?", description: "The material read so far is thrown away. Nothing is saved.", confirmLabel: "Stop reading", cancelLabel: "Keep reading", tone: "danger" },
+		);
 		if (ok && jobId) await call(ch.cancel, { jobId }).catch((err) => toast.error("Could not stop", { description: errorText(err) }));
 	};
 	const grid = pageList && pageList.length <= 400 ? pageList : null;
@@ -308,9 +318,9 @@ function ReadingPanel() {
 			<CardHeader>
 				<div className="flex items-center gap-2">
 					<Loader2 className="size-4 animate-spin text-primary" />
-					<CardTitle>Reading your material</CardTitle>
+					<CardTitle>{topic ? "Writing your material" : "Reading your material"}</CardTitle>
 				</div>
-				<CardDescription>{p ? `File ${p.fileIndex + 1} of ${p.fileCount}: ${p.fileName}` : "Starting…"}</CardDescription>
+				<CardDescription>{!p ? "Starting…" : topic ? `Topic: ${p.fileName}` : `File ${p.fileIndex + 1} of ${p.fileCount}: ${p.fileName}`}</CardDescription>
 			</CardHeader>
 			<CardContent className="space-y-5">
 				<div className="rounded-xl border bg-subtle p-4">
@@ -319,7 +329,7 @@ function ReadingPanel() {
 						<span className="min-w-0 truncate text-muted-foreground">{p?.detail}</span>
 						<span className="ml-auto font-medium tabular-nums">{pct}%</span>
 					</div>
-					<div className="h-1.5 overflow-hidden rounded-full bg-muted" role="progressbar" aria-label="Reading progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={pct}>
+					<div className="h-1.5 overflow-hidden rounded-full bg-muted" role="progressbar" aria-label={topic ? "Writing progress" : "Reading progress"} aria-valuemin={0} aria-valuemax={100} aria-valuenow={pct}>
 						<div className="h-full rounded-full bg-primary transition-[width] duration-300" style={{ width: `${pct}%` }} />
 					</div>
 					{p?.pageCount && p.pageIndex !== undefined ? (
@@ -369,7 +379,7 @@ function ReadingPanel() {
 				) : null}
 				<Button variant="outline" onClick={() => void stop()}>
 					<Square className="fill-current" />
-					Stop reading
+					{topic ? "Stop writing" : "Stop reading"}
 				</Button>
 			</CardContent>
 		</Card>
@@ -400,12 +410,21 @@ function FigureThumb({ draftId, figure }: { draftId: string; figure: Source["fig
 function SourcePreview({ draftId }: { draftId: string }) {
 	const navigate = useNavigate();
 	const [draft, setDraft] = useState<DraftView | null>(null);
+	const topic = useIngest((x) => x.mode === "topic");
+	const reset = () => useIngest.setState((x) => ({ items: [], jobId: null, update: null, tracks: {}, draftId: null, topic: { ...x.topic, topic: "", instructions: "" } }));
 	useEffect(() => {
 		void call(ch.draft, { id: draftId })
 			.then(setDraft)
-			.catch((err) => toast.error("Could not open the draft", { description: errorText(err) }));
+			.catch(() => {
+				// The draft was deleted (or cannot be read): start over instead of waiting forever.
+				useIngest.setState({ jobId: null, update: null, tracks: {}, draftId: null });
+			});
 	}, [draftId]);
-	const reset = () => useIngest.setState({ items: [], jobId: null, update: null, tracks: {}, draftId: null });
+	// The draft lives on in Drafts; the next New video starts with an empty form.
+	const continueToOutline = () => {
+		reset();
+		void navigate({ to: "/new", search: { draft: draftId } });
+	};
 	if (!draft)
 		return (
 			<Card>
@@ -466,12 +485,12 @@ function SourcePreview({ draftId }: { draftId: string }) {
 						</div>
 					) : null}
 					<div className="flex gap-2">
-						<Button onClick={() => void navigate({ to: "/new", search: { draft: draft.id } })}>
+						<Button onClick={continueToOutline}>
 							Continue to outline <ArrowRight />
 						</Button>
 						<Button variant="outline" onClick={reset}>
 							<RotateCcw />
-							Read something else
+							{topic ? "Write about something else" : "Read something else"}
 						</Button>
 					</div>
 				</CardContent>
@@ -523,6 +542,143 @@ function SourcePreview({ draftId }: { draftId: string }) {
 	);
 }
 
+const EXAMPLE_TOPICS = ["How vaccines train the immune system", "Photosynthesis, step by step", "Why the Roman Empire fell", "How a CPU runs a program", "Supply and demand"];
+
+/** "From a topic": the AI writes the material. The user checks it before the outline. */
+function TopicCard() {
+	const form = useIngest((s) => s.topic);
+	const set = (patch: Partial<typeof form>) => useIngest.setState((s) => ({ topic: { ...s.topic, ...patch } }));
+	return (
+		<Card>
+			<CardHeader>
+				<CardTitle>What should the video teach?</CardTitle>
+				<CardDescription className="mt-1">The AI writes study notes on the topic. You check them, then the outline, before any video is made.</CardDescription>
+			</CardHeader>
+			<CardContent className="space-y-4">
+				<div className="space-y-1.5">
+					<Label htmlFor="topic-text">Topic</Label>
+					<Textarea
+						id="topic-text"
+						value={form.topic}
+						onChange={(e) => set({ topic: e.target.value })}
+						rows={3}
+						maxLength={500}
+						placeholder="For example: How black holes form, and why nothing escapes them"
+						className="font-[inherit]"
+					/>
+					<div className="flex flex-wrap items-center gap-1.5 pt-1">
+						<Lightbulb className="size-3.5 text-muted-foreground" />
+						{EXAMPLE_TOPICS.map((t) => (
+							<button key={t} type="button" onClick={() => set({ topic: t })} className="rounded-full border bg-card px-2.5 py-0.5 text-[12px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground">
+								{t}
+							</button>
+						))}
+					</div>
+				</div>
+				<div className="space-y-1.5">
+					<Label>Format</Label>
+					<div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label="Video format">
+						{(Object.keys(VIDEO_FORMATS) as VideoFormat[]).map((f) => {
+							const on = form.format === f;
+							const v = VIDEO_FORMATS[f];
+							return (
+								<button
+									key={f}
+									type="button"
+									role="radio"
+									aria-checked={on}
+									// Shorts are short: picking vertical suggests 1 minute when the length is long.
+									onClick={() => set({ format: f, minutes: f === "vertical" && form.minutes > 3 ? 1 : form.minutes })}
+									className={cn("flex items-center gap-3 rounded-lg border px-3 py-2.5 text-left transition-colors", on ? "border-primary bg-primary-soft" : "hover:bg-accent")}
+								>
+									<span className={cn("shrink-0 rounded-[3px] border-2", on ? "border-primary" : "border-muted-foreground/60", f === "vertical" ? "h-7 w-4" : "h-4 w-7")} />
+									<span>
+										<span className="block text-[13px] font-medium">{v.label}</span>
+										<span className="block text-[12px] text-muted-foreground">{v.hint}</span>
+									</span>
+								</button>
+							);
+						})}
+					</div>
+				</div>
+				<div className="grid grid-cols-3 gap-3">
+					<div className="space-y-1.5">
+						<Label>Length</Label>
+						<Select ariaLabel="Video length" value={String(form.minutes)} onChange={(v) => set({ minutes: Number(v) })} options={TARGET_MINUTES.filter((m) => m <= 60).map((m) => ({ value: String(m), label: `About ${lengthLabel(m)}` }))} />
+					</div>
+					<div className="space-y-1.5">
+						<Label>Language</Label>
+						<Select ariaLabel="Narration language" value={form.language} onChange={(v) => set({ language: v })} options={LANGUAGES.map((l) => ({ value: l.code, label: l.label }))} />
+					</div>
+					<div className="space-y-1.5">
+						<Label>Tone</Label>
+						<Select ariaLabel="Tone" value={form.tone} onChange={(v) => set({ tone: v })} options={TONES.map((t) => ({ value: t, label: t }))} />
+					</div>
+				</div>
+				<div className="space-y-1.5">
+					<Label htmlFor="topic-notes">What to cover (optional)</Label>
+					<Textarea
+						id="topic-notes"
+						value={form.instructions}
+						onChange={(e) => set({ instructions: e.target.value })}
+						rows={4}
+						maxLength={3000}
+						placeholder={"Points to include, examples to use, things to leave out, what viewers already know.\nFor example: Use a football as the example. Skip the maths. Viewers know what a cell is."}
+						className="font-[inherit]"
+					/>
+				</div>
+			</CardContent>
+		</Card>
+	);
+}
+
+/** Cost estimate and the start button for "From a topic". */
+function TopicRun() {
+	const { topic: form, level, update } = useIngest();
+	const running = isRunning(update);
+	const req = TopicRequest.safeParse({ ...form, level });
+	const key = req.success ? JSON.stringify(req.data) : null;
+	const [est, setEst] = useState<{ value: Estimate | null; error: string | null; loading: boolean }>({ value: null, error: null, loading: false });
+	useEffect(() => {
+		if (!key) return;
+		let live = true;
+		setEst((e) => ({ ...e, loading: true }));
+		const t = setTimeout(() => {
+			void call(pc.topicEstimate, JSON.parse(key) as TopicRequest)
+				.then((value) => live && setEst({ value, error: null, loading: false }))
+				.catch((err) => live && setEst({ value: null, error: errorText(err), loading: false }));
+		}, 400);
+		return () => {
+			live = false;
+			clearTimeout(t);
+		};
+	}, [key]);
+
+	const start = async () => {
+		if (!req.success) return;
+		try {
+			const e = await call(pc.topicEstimate, req.data);
+			const confirmed = await confirmCost(e, "Writing the material");
+			if (confirmed === null) return;
+			const r = await call(pc.topicStart, { ...req.data, confirmedCost: confirmed });
+			useIngest.setState({ jobId: r.jobId, update: { jobId: r.jobId, state: "running", progress: null }, tracks: {}, draftId: null });
+		} catch (err) {
+			toast.error("Could not start writing", { description: errorText(err) });
+		}
+	};
+
+	return (
+		<>
+			{key ? <EstimateCard step="research" est={est} /> : null}
+			<Button className="w-full" disabled={!req.success || running || !!est.error} loading={running} onClick={() => void start()}>
+				<Sparkles />
+				Write material <ArrowRight />
+			</Button>
+			{!req.success ? <p className="text-center text-[12px] text-muted-foreground">Type a topic first.</p> : null}
+		</>
+	);
+}
+
 function Capability({ icon: Icon, ok, label, detail, action }: { icon: LucideIcon; ok: boolean; label: string; detail: string; action?: React.ReactNode }) {
 	return (
 		<div className="flex gap-2.5 text-[12px]">
@@ -550,7 +706,7 @@ export function NewVideoPage() {
 }
 
 function MaterialStep() {
-	const { items, level, ocr, update, draftId } = useIngest();
+	const { items, level, ocr, update, draftId, mode } = useIngest();
 	const [caps, setCaps] = useState<Capabilities | null>(null);
 	useEffect(() => {
 		void call(ch.capabilities).then(setCaps).catch(() => {});
@@ -582,9 +738,25 @@ function MaterialStep() {
 
 	return (
 		<div>
-			<PageHeader title="New video" description="Add your material, choose the audience, and we will draft an outline for you to approve." />
+			<PageHeader
+				title="New video"
+				description={mode === "topic" ? "Describe a topic, choose the audience, and the AI writes the material. You check it before the outline." : "Add your material, choose the audience, and we will draft an outline for you to approve."}
+			/>
 			<div className="grid grid-cols-[1fr_340px] items-start gap-5">
-				<div className="min-w-0">{running ? <ReadingPanel /> : showResult ? <SourcePreview draftId={draftId} /> : <MaterialCard caps={caps} />}</div>
+				<div className="min-w-0 space-y-4">
+					{!running && !showResult ? (
+						<Segmented
+							ariaLabel="Where the material comes from"
+							value={mode}
+							onChange={(v) => useIngest.setState({ mode: v })}
+							options={[
+								{ value: "files", label: "From my material", icon: UploadCloud },
+								{ value: "topic", label: "From a topic (AI writes it)", icon: Sparkles },
+							]}
+						/>
+					) : null}
+					{running ? <ReadingPanel /> : showResult ? <SourcePreview draftId={draftId} /> : mode === "topic" ? <TopicCard /> : <MaterialCard caps={caps} />}
+				</div>
 
 				<div className="space-y-5">
 					<Card>
@@ -609,7 +781,8 @@ function MaterialStep() {
 							))}
 						</CardContent>
 					</Card>
-					{!showResult ? (
+					{!showResult && mode === "topic" ? <TopicRun /> : null}
+					{!showResult && mode === "files" ? (
 						<Card>
 							<CardHeader>
 								<CardTitle>Scanned pages</CardTitle>

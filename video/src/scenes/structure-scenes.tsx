@@ -1,7 +1,7 @@
 import { interpolate, useCurrentFrame } from "remotion";
 import type { PropsOf } from "../../../src/shared/plan/schema";
 import { texture } from "../styles/styles";
-import { accentAt, appearStyle, SceneFrame, Surface, Underline, useAppear, useRevealAt, useRevealFrames, useScene, useStyle } from "./kit";
+import { accentAt, appearStyle, SceneFrame, Surface, Underline, useAppear, useLayout, useRevealAt, useRevealFrames, useScene, useStyle } from "./kit";
 
 /* Kinetic text, quote, summary checklist and key-term glossary. */
 
@@ -114,10 +114,11 @@ export function QuoteScene({ text, author, source }: PropsOf<"quote">) {
 	const shown = interpolate(frame, [8, end], [0, words.length], { extrapolateLeft: "clamp", extrapolateRight: "clamp" });
 	const by = useAppear(author || source ? Math.round(end) : null, { damping: 200 });
 	const size = text.length > 220 ? 52 : text.length > 120 ? 62 : 76;
+	const { vertical } = useLayout();
 	return (
 		<SceneFrame center>
 			<div style={{ ...texture(s), position: "relative", maxWidth: 1450, margin: "0 auto" }}>
-				<div style={{ position: "absolute", left: -100, top: -170, fontFamily: "Georgia, serif", fontSize: 420, lineHeight: 1, color: s.accent, opacity: 0.25 * mark, transform: `scale(${0.7 + 0.3 * mark})` }}>“</div>
+				<div style={{ position: "absolute", left: vertical ? -30 : -100, top: -170, fontFamily: "Georgia, serif", fontSize: 420, lineHeight: 1, color: s.accent, opacity: 0.25 * mark, transform: `scale(${0.7 + 0.3 * mark})` }}>“</div>
 				<div style={{ position: "relative", fontFamily: s.headingFont, fontSize: size, lineHeight: 1.32, fontWeight: Math.max(400, s.headingWeight - 100), fontStyle: s.hand ? "normal" : "italic" }}>
 					{words.map((w, i) => (
 						<span key={i} style={{ opacity: interpolate(shown - i, [0, 1], [0.12, 1], { extrapolateLeft: "clamp", extrapolateRight: "clamp" }) }}>
@@ -189,12 +190,14 @@ function GlossaryCard({ index, term, meaning, at, compact }: { index: number; te
 export function GlossaryScene({ heading, terms }: PropsOf<"glossary">) {
 	const s = useStyle();
 	const frames = useRevealFrames(terms.length);
-	const two = terms.length > 3;
+	const { vertical } = useLayout();
+	// Tall frames: one column, term above its meaning.
+	const two = terms.length > 3 && !vertical;
 	return (
 		<SceneFrame heading={heading ?? "Key terms"}>
-			<div style={{ ...texture(s), display: "grid", gridTemplateColumns: two ? "1fr 1fr" : "1fr", gap: two ? 30 : 34 }}>
+			<div style={{ ...texture(s), display: "grid", gridTemplateColumns: two ? "1fr 1fr" : "1fr", gap: two || (vertical && terms.length > 4) ? 24 : 34 }}>
 				{terms.map((t, i) => (
-					<GlossaryCard key={i} index={i} term={t.term} meaning={t.meaning} at={frames[i]!} compact={two} />
+					<GlossaryCard key={i} index={i} term={t.term} meaning={t.meaning} at={frames[i]!} compact={two || vertical} />
 				))}
 			</div>
 		</SceneFrame>

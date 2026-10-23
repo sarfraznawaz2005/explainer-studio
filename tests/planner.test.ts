@@ -188,11 +188,26 @@ describe("chapter script", () => {
 		const plan = assemblePlan(OUTLINE, settings("Kindergarten"), [ch1, ch2]);
 		expect(VideoPlan.safeParse(plan).success).toBe(true);
 		const first = plan.chapters[0]!.scenes;
-		expect(first[0]).toMatchObject({ id: "hook", type: "title", props: { title: "How Bubble Sort Works", kicker: "Computer Science · Kindergarten" } });
+		expect(first[0]).toMatchObject({ id: "hook", type: "title", props: { title: "How Bubble Sort Works" } });
+		// Subject and level are not shown to viewers.
+		expect(first[0]!.type === "title" && first[0]!.props.kicker).toBeFalsy();
 		expect(first[0]!.narration.map((n) => n.text)).toEqual(OUTLINE.hook);
 		expect(first[1]).toMatchObject({ id: "ch1-card", type: "chapter", props: { number: 1 } });
 		expect(plan.meta).toMatchObject({ level: "Kindergarten", style: "chalkboard", wordsPerMinute: AUDIENCES.Kindergarten.wordsPerMinute });
 		expect(assemblePlan(OUTLINE, settings("PhD", { style: "clean" }), [ch1, ch2]).meta).toMatchObject({ style: "clean", wordsPerMinute: 170 });
+	});
+
+	it("makes a vertical (9:16) plan for Shorts and tells the model it is for phones", () => {
+		const ch1 = toScenes(0, goodChapter(1) as never, OUTLINE);
+		const ch2 = toScenes(1, goodChapter(2) as never, OUTLINE);
+		expect(assemblePlan(OUTLINE, settings("High school"), [ch1, ch2]).meta).toMatchObject({ width: 1920, height: 1080 });
+		const tall = assemblePlan(OUTLINE, settings("High school", { format: "vertical" }), [ch1, ch2]);
+		expect(tall.meta).toMatchObject({ width: 1080, height: 1920 });
+		expect(VideoPlan.safeParse(tall).success).toBe(true);
+		expect(scriptSystem(settings("High school", { format: "vertical" }))).toContain("vertical video (9:16)");
+		expect(scriptSystem(settings("High school"))).not.toContain("vertical video");
+		// Old drafts saved before formats existed read as wide.
+		expect(settings("High school").format).toBe("landscape");
 	});
 
 	it("tells the model the level's scene types, sentence limit and word budget", () => {

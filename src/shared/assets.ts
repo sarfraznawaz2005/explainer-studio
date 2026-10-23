@@ -25,7 +25,7 @@ export type SfxRole = z.infer<typeof SfxRole>;
 
 /* ---------- Licenses ---------- */
 
-export const LicenseCode = z.enum(["CC0-1.0", "PD", "CC-BY-4.0", "CC-BY-3.0", "OWNED"]);
+export const LicenseCode = z.enum(["CC0-1.0", "PD", "CC-BY-4.0", "CC-BY-3.0", "CC-BY-2.5", "CC-BY-2.0", "OWNED"]);
 export type LicenseCode = z.infer<typeof LicenseCode>;
 
 export const LICENSES: Record<LicenseCode, { label: string; short: string; url: string | null; credit: boolean }> = {
@@ -33,6 +33,8 @@ export const LICENSES: Record<LicenseCode, { label: string; short: string; url: 
 	PD: { label: "Public domain", short: "Public domain", url: "https://creativecommons.org/publicdomain/mark/1.0/", credit: false },
 	"CC-BY-4.0": { label: "CC BY 4.0 (credit required)", short: "CC BY 4.0", url: "https://creativecommons.org/licenses/by/4.0/", credit: true },
 	"CC-BY-3.0": { label: "CC BY 3.0 (credit required)", short: "CC BY 3.0", url: "https://creativecommons.org/licenses/by/3.0/", credit: true },
+	"CC-BY-2.5": { label: "CC BY 2.5 (credit required)", short: "CC BY 2.5", url: "https://creativecommons.org/licenses/by/2.5/", credit: true },
+	"CC-BY-2.0": { label: "CC BY 2.0 (credit required)", short: "CC BY 2.0", url: "https://creativecommons.org/licenses/by/2.0/", credit: true },
 	OWNED: { label: "My own work, or I have a license for it", short: "Own / licensed", url: null, credit: false },
 };
 
@@ -64,7 +66,7 @@ export function classifyLicense(raw: string | null | undefined): LicenseVerdict 
 	if (/publicdomain\/zero|creative commons 0|^cc0|cc0 ?1\.0|^cc-?zero/.test(s)) return { ok: true, code: "CC0-1.0" };
 	if (/publicdomain\/mark|^public domain$|^pd$/.test(s)) return { ok: true, code: "PD" };
 	const by = /creativecommons\.org\/licenses\/by\/(\d\.\d)\/?$/.exec(s) ?? /^(?:cc[ -]?by|attribution)(?:[ -](\d\.\d))?$/.exec(s);
-	if (by) return { ok: true, code: by[1] === "3.0" ? "CC-BY-3.0" : "CC-BY-4.0" };
+	if (by) return { ok: true, code: by[1] === "3.0" ? "CC-BY-3.0" : by[1] === "2.5" ? "CC-BY-2.5" : by[1] === "2.0" ? "CC-BY-2.0" : "CC-BY-4.0" };
 	return { ok: false, reason: `The license "${text.slice(0, 60)}" is not one the app can use. Only CC0, public domain and CC BY are allowed.` };
 }
 

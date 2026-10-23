@@ -11,7 +11,7 @@ import { ChecksumError, downloadPinned } from "../src/main/voice/download";
 import { createVoiceEngine } from "../src/main/voice/engine";
 import { cleanPythonEnv, findPython, NO_PYTHON_MESSAGE } from "../src/main/voice/python";
 import { createSidecar } from "../src/main/voice/sidecar";
-import { describeVoices, langOf } from "../src/main/voice/voices";
+import { describeVoices, langOf, PIPER_VOICES, sampleSentence } from "../src/main/voice/voices";
 import { tempDir } from "./helpers";
 
 const ok = (stdout: string) => Promise.resolve({ code: 0, stdout, stderr: "" });
@@ -250,15 +250,38 @@ describe("voice engine status", () => {
 		expect(progress.at(-1)).toBe(`error:${NO_PYTHON_MESSAGE}`);
 		expect(engine.isInstalling()).toBe(false);
 	});
+
+	it("downloads a Piper voice on first use and keeps nothing when the download is wrong", async () => {
+		const { root, scripts } = setup();
+		const urls: string[] = [];
+		const fetchImpl = (async (url: string) => {
+			urls.push(url);
+			return new Response(new Uint8Array(PIPER_VOICES.ur_fasih!.model.bytes));
+		}) as unknown as typeof fetch;
+		const engine = createVoiceEngine({ root, scriptsDir: scripts, files, fetchImpl, findPython: async () => ({ ok: false, message: "x" }) });
+		writeFileSync(join(root, "env.json"), JSON.stringify({ requirementsHash: "x", python: { exe: "p", version: "3.12.4" }, installedAt: "" }));
+		expect(engine.piperDownloaded("ur_fasih")).toBe(false);
+		expect(engine.piperDownloaded("af_heart")).toBe(false);
+		await expect(engine.speak({ text: "سلام", voice: "ur_fasih", speed: 1, out: join(root, "a.wav") })).rejects.toThrow(/Could not download this voice/);
+		expect(urls).toEqual([PIPER_VOICES.ur_fasih!.model.url]);
+		expect(urls[0]).toMatch(/^https:\/\/huggingface\.co\/rhasspy\/piper-voices\/resolve\/[0-9a-f]{40}\//);
+		expect(existsSync(join(engine.paths.modelsDir, "piper", "ur_PK-fasih-medium.onnx"))).toBe(false);
+		expect(existsSync(join(engine.paths.modelsDir, "piper", "ur_PK-fasih-medium.onnx.part"))).toBe(false);
+	});
 });
 
 describe("voices", () => {
-	it("keeps English voices, labels them and puts top picks first", () => {
-		const v = describeVoices(["zf_xiaobei", "am_adam", "af_heart", "bf_emma", "jf_alpha", "bm_lewis"]);
-		expect(v.map((x) => x.id)).toEqual(["af_heart", "bf_emma", "am_adam", "bm_lewis"]);
-		expect(v[0]).toEqual({ id: "af_heart", name: "Heart", accent: "American", gender: "female", recommended: true });
-		expect(langOf("bf_emma")).toBe("en-gb");
-		expect(langOf("am_adam")).toBe("en-us");
+	it("offers English top picks first, then Kokoro and Piper voices by language", () => {
+		const v = describeVoices(["zf_xiaobei", "am_adam", "af_heart", "hf_alpha", "bf_emma", "jf_alpha", "bm_lewis", "ef_dora"], (id) => id === "ur_aegis");
+		expect(v.map((x) => x.id)).toEqual(["af_heart", "bf_emma", "am_adam", "bm_lewis", "hf_alpha", "ef_dora", "ur_aegis", "ur_fasih"]);
+		expect(v[0]).toEqual({ id: "af_heart", name: "Heart", accent: "American", group: "American English", language: "en", gender: "female", recommended: true, engine: "kokoro", downloadBytes: 0 });
+		expect(v.find((x) => x.id === "hf_alpha")).toMatchObject({ language: "hi", group: "Hindi", engine: "kokoro" });
+		expect(v.find((x) => x.id === "ur_aegis")).toMatchObject({ language: "ur", engine: "piper", gender: "female", downloadBytes: 0 });
+		expect(v.find((x) => x.id === "ur_fasih")!.downloadBytes).toBeGreaterThan(60_000_000);
+		// Voice ids pass the IPC check; espeak gets the right language for each Kokoro voice.
+		for (const x of v) expect(() => parseInput(voiceChannels.preview, { voice: x.id, speed: 1 })).not.toThrow();
+		expect([langOf("bf_emma"), langOf("am_adam"), langOf("hf_alpha"), langOf("ef_dora"), langOf("pf_dora")]).toEqual(["en-gb", "en-us", "hi", "es", "pt-br"]);
+		expect(sampleSentence({ name: "Fasih", language: "ur" })).toMatch(/میں Fasih ہوں/);
 	});
 
 	it("validates voice IPC input", () => {

@@ -1,10 +1,11 @@
 import { createContext, useContext, type CSSProperties, type ReactNode } from "react";
 import { AbsoluteFill, interpolate, spring, useCurrentFrame, useVideoConfig } from "remotion";
 import { cueFrame, msToFrames, type TimedScene } from "../../../src/shared/plan/timing";
+import type { FigureMeta } from "../../../src/shared/source";
 import { glow, outline, texture, type VisualStyle } from "../styles/styles";
 
 /** What every scene can read: its timing (sentences, cues), the visual style and where source figures live. */
-type SceneCtx = { timed: TimedScene; style: VisualStyle; figureBase?: string };
+type SceneCtx = { timed: TimedScene; style: VisualStyle; figureBase?: string; figureMeta?: Record<string, FigureMeta> };
 const Ctx = createContext<SceneCtx | null>(null);
 
 export function SceneProvider({ value, children }: { value: SceneCtx; children: ReactNode }) {
@@ -42,6 +43,34 @@ export function useActiveCue(action: "focus" | "highlight"): number {
 	return active;
 }
 
+/**
+ * Frame shape. Vertical (9:16) videos for Shorts, TikTok and Reels keep clear of the
+ * phone's own buttons and captions: more room at the top and bottom, narrower sides.
+ */
+export const isVertical = (w: number, h: number) => h > w;
+
+/** The frame a scene is laid out for, when it differs from the composition (a scene drawn small inside a thumbnail). */
+const FrameSize = createContext<{ width: number; height: number } | null>(null);
+export const FrameSizeProvider = FrameSize.Provider;
+const PAD = { wide: { top: 96, side: 140, bottom: 96 }, tall: { top: 210, side: 72, bottom: 330 } } as const;
+
+export function useLayout() {
+	const config = useVideoConfig();
+	const { width, height } = useContext(FrameSize) ?? config;
+	const vertical = isVertical(width, height);
+	const pad = vertical ? PAD.tall : PAD.wide;
+	const contentW = width - pad.side * 2;
+	const innerH = height - pad.top - pad.bottom;
+	return {
+		vertical,
+		pad,
+		/** Content box width inside SceneFrame. */
+		contentW,
+		/** Height left for the scene's drawing, under a heading or without one (wide frames: the long-standing 720 / 880). */
+		stageH: (heading?: string) => (vertical ? (heading ? innerH - 200 : innerH) : heading ? 720 : 880),
+	};
+}
+
 /** Fades from a hidden state: opacity plus a small slide. */
 export function appearStyle(p: number, dy = 24): CSSProperties {
 	return { opacity: p, transform: `translateY(${(1 - p) * dy}px)` };
@@ -51,7 +80,7 @@ export function appearStyle(p: number, dy = 24): CSSProperties {
  * Scene wrapper: padding, enter transition from the plan, a short exit fade,
  * and an optional heading that writes in first.
  */
-export function SceneFrame({ heading, children, center }: { heading?: string; children: ReactNode; center?: boolean }) {
+export function SceneFrame({ heading, children, center, bleed }: { heading?: string; children: ReactNode; center?: boolean; bleed?: boolean }) {
 	const frame = useCurrentFrame();
 	const { fps } = useVideoConfig();
 	const { timed, style } = useScene();
@@ -61,14 +90,17 @@ export function SceneFrame({ heading, children, center }: { heading?: string; ch
 	const exit = interpolate(frame, [timed.durationInFrames - 10, timed.durationInFrames], [1, 0], { extrapolateLeft: "clamp", extrapolateRight: "clamp" });
 	const transform = type === "slide" ? `translateX(${(1 - p) * 80}px)` : type === "zoom" ? `scale(${0.94 + 0.06 * p})` : undefined;
 	const headP = useAppear(Math.round(enterFrames / 2));
+	const { vertical, pad } = useLayout();
 	return (
-		<AbsoluteFill style={{ opacity: p * exit, transform, padding: "96px 140px", color: style.text, fontFamily: style.bodyFont }}>
+		// bleed: no padding, the scene draws edge to edge (photos).
+		<AbsoluteFill style={{ opacity: p * exit, transform, padding: bleed ? 0 : `${pad.top}px ${pad.side}px ${pad.bottom}px`, color: style.text, fontFamily: style.bodyFont }}>
 			{heading ? (
-				<div style={{ ...appearStyle(headP, 16), marginBottom: 56 }}>
-					<Heading>{heading}</Heading>
+				<div style={{ ...appearStyle(headP, 16), marginBottom: vertical ? 64 : 56 }}>
+					<Heading size={vertical ? 72 : 64}>{heading}</Heading>
 				</div>
 			) : null}
-			<div style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: center ? "center" : "flex-start", minHeight: 0 }}>{children}</div>
+			{/* Tall frames centre the content, so a short scene does not leave the bottom half empty. */}
+			<div style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: center || vertical ? "center" : "flex-start", minHeight: 0 }}>{children}</div>
 		</AbsoluteFill>
 	);
 }
@@ -147,9 +179,6 @@ export function Surface({
 export const ACCENTS = (s: VisualStyle) => [s.accent, s.accent2, s.accent3, s.positive];
 export const accentAt = (s: VisualStyle, i: number) => ACCENTS(s)[i % 4]!;
 
-/** Content box inside SceneFrame (1920×1080 minus padding), and the part left under a heading. */
-export const CONTENT_W = 1640;
-export const stageHeight = (heading?: string) => (heading ? 720 : 880);
 
 /** Frame (scene-relative) of a sentence edge plus an offset; the lead-in when the sentence does not exist. */
 export function sentenceFrame(timed: TimedScene, at: number, edge: "start" | "end", offsetMs: number, fps: number): number {

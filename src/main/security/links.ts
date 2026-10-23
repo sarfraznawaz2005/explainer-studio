@@ -24,6 +24,13 @@ const ALLOWED_HOSTS = [
 	"ollama.com",
 	"python.org",
 	"archive.org",
+	// Source pages of free photos (picture credits).
+	"wikimedia.org",
+	"wikipedia.org",
+	"wikidata.org",
+	"openverse.org",
+	"flickr.com",
+	"nasa.gov",
 ];
 
 export type LinkVerdict = "open" | "ask" | "block";

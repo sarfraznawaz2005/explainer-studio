@@ -1,7 +1,7 @@
 import { interpolate, useCurrentFrame } from "remotion";
 import type { PropsOf } from "../../../src/shared/plan/schema";
 import { outline, texture, type VisualStyle } from "../styles/styles";
-import { accentAt, appearStyle, borders, CONTENT_W, ramp, SceneFrame, stageHeight, Surface, useAppear, useRevealFrames, useStyle } from "./kit";
+import { accentAt, appearStyle, borders, ramp, SceneFrame, Surface, useAppear, useLayout, useRevealFrames, useStyle } from "./kit";
 
 /* Cycle, hierarchy tree, mind map, Venn diagram, pros and cons. */
 
@@ -30,14 +30,15 @@ export function CycleScene({ heading, center, steps }: PropsOf<"cycle">) {
 	const s = useStyle();
 	const frame = useCurrentFrame();
 	const n = steps.length;
-	const W = CONTENT_W;
-	const H = stageHeight(heading);
+	const { vertical, contentW: W, stageH } = useLayout();
+	const H = stageH(heading);
 	const frames = useRevealFrames(n);
 	const cx = W / 2;
 	const cy = H / 2;
-	const R = Math.min(H / 2 - 95, 340);
-	const Rx = R * 1.55;
-	const cardW = n > 6 ? 250 : 290;
+	const cardW = vertical ? (n > 6 ? 230 : 270) : n > 6 ? 250 : 290;
+	// A wide ellipse in a wide frame; a tall one in a tall frame, with the cards kept inside the width.
+	const R = vertical ? Math.min(H / 2 - 110, 560) : Math.min(H / 2 - 95, 340);
+	const Rx = vertical ? W / 2 - cardW / 2 - 10 : R * 1.55;
 	const pos = (k: number) => {
 		const a = rad(-90 + (k * 360) / n);
 		return { x: cx + Math.cos(a) * Rx, y: cy + Math.sin(a) * R, a };
@@ -74,7 +75,7 @@ export function CycleScene({ heading, center, steps }: PropsOf<"cycle">) {
 					})}
 				</svg>
 				{center ? (
-					<div style={{ position: "absolute", left: cx - 180, top: cy, width: 360, transform: "translateY(-50%)", textAlign: "center", fontFamily: s.headingFont, fontSize: 44, fontWeight: 800, color: s.accent, opacity: ring }}>{center}</div>
+					<div style={{ position: "absolute", left: cx - 180, top: cy, width: 360, transform: "translateY(-50%)", textAlign: "center", fontFamily: s.headingFont, fontSize: vertical ? 40 : 44, fontWeight: 800, color: s.accent, opacity: ring }}>{center}</div>
 				) : null}
 				{steps.map((st, k) => {
 					const p = pos(k);
@@ -110,16 +111,24 @@ export function treeLayout(nodes: { parent?: number }[]) {
 		}
 	};
 	place(0);
-	return { x, depth, leaves: Math.max(1, leaf), levels: Math.max(...depth) + 1 };
+	// Depth-first order, for the indented (tall frame) layout.
+	const order: number[] = [];
+	const walk = (i: number) => {
+		order.push(i);
+		kids[i]!.forEach(walk);
+	};
+	walk(0);
+	return { x, depth, leaves: Math.max(1, leaf), levels: Math.max(...depth) + 1, order };
 }
 
 export function TreeScene({ heading, nodes }: PropsOf<"tree">) {
 	const s = useStyle();
 	const frame = useCurrentFrame();
-	const W = CONTENT_W;
-	const H = stageHeight(heading);
+	const { vertical, contentW: W, stageH } = useLayout();
 	const frames = useRevealFrames(nodes.length);
-	const { x, depth, leaves, levels } = treeLayout(nodes);
+	const { x, depth, leaves, levels, order } = treeLayout(nodes);
+	if (vertical) return <OutlineTree heading={heading} nodes={nodes} depth={depth} order={order} frames={frames} W={W} H={stageH(heading)} />;
+	const H = stageH(heading);
 	const perLevel = Math.max(...Array.from({ length: levels }, (_, d) => depth.filter((v) => v === d).length));
 	const boxW = Math.min(300, W / Math.max(leaves, perLevel) - 24);
 	const boxH = 92;
@@ -149,19 +158,66 @@ export function TreeScene({ heading, nodes }: PropsOf<"tree">) {
 	);
 }
 
-function TreeNode({ x, y, w, at, color, label, size, root }: { x: number; y: number; w: number; at: number; color: string; label: string; size: number; root: boolean }) {
+/**
+ * Tall frames: the tree as an indented outline, one node per row, each child
+ * joined to its parent by an elbow line. Wide trees no longer need the width.
+ */
+function OutlineTree({ heading, nodes, depth, order, frames, W, H }: { heading?: string; nodes: PropsOf<"tree">["nodes"]; depth: number[]; order: number[]; frames: number[]; W: number; H: number }) {
+	const s = useStyle();
+	const frame = useCurrentFrame();
+	const rows = order.length;
+	const boxH = Math.min(104, Math.floor(H / rows) - 18);
+	const rowH = Math.min(boxH + 34, H / rows);
+	const indent = Math.min(110, (W - 420) / Math.max(1, Math.max(...depth)));
+	const row = new Map(order.map((n, r) => [n, r]));
+	const top = (H - rows * rowH) / 2;
+	const cy = (i: number) => top + row.get(i)! * rowH + rowH / 2;
+	const left = (i: number) => depth[i]! * indent;
+	const size = boxH < 70 ? 28 : 34;
+	return (
+		<SceneFrame heading={heading} center={!heading}>
+			<div style={{ ...texture(s), position: "relative", width: W, height: H }}>
+				<svg width={W} height={H} style={{ position: "absolute", inset: 0, overflow: "visible" }}>
+					{nodes.map((n, i) => {
+						if (i === 0 || n.parent === undefined) return null;
+						const draw = ramp(frame, frames[i]! - 10, frames[i]! + 4);
+						const x0 = left(n.parent) + 36;
+						return <path key={i} d={`M ${x0} ${cy(n.parent) + boxH / 2} V ${cy(i)} H ${left(i)}`} fill="none" stroke={s.muted} strokeWidth={4} strokeLinejoin="round" pathLength={1} strokeDasharray={1} strokeDashoffset={1 - draw} />;
+					})}
+				</svg>
+				{nodes.map((n, i) => (
+					<TreeNode
+						key={i}
+						x={left(i) + (W - left(i)) / 2}
+						y={cy(i)}
+						w={W - left(i)}
+						h={boxH}
+						at={frames[i]!}
+						color={depth[i] === 0 ? s.accent : accentAt(s, depth[i]!)}
+						label={n.label}
+						size={depth[i] === 0 ? size + 4 : size}
+						root={i === 0}
+						align="left"
+					/>
+				))}
+			</div>
+		</SceneFrame>
+	);
+}
+
+function TreeNode({ x, y, w, h = 92, at, color, label, size, root, align = "center" }: { x: number; y: number; w: number; h?: number; at: number; color: string; label: string; size: number; root: boolean; align?: "center" | "left" }) {
 	const s = useStyle();
 	const p = useAppear(at, { damping: 15 });
 	return (
-		<div style={{ position: "absolute", left: x - w / 2, top: y, width: w, height: 92, transform: `translateY(-50%) scale(${0.7 + 0.3 * p})`, opacity: p, display: "flex" }}>
+		<div style={{ position: "absolute", left: x - w / 2, top: y, width: w, height: h, transform: `translateY(-50%) scale(${0.7 + 0.3 * p})`, opacity: p, display: "flex" }}>
 			<div
 				style={{
 					flex: 1,
 					display: "flex",
 					alignItems: "center",
-					justifyContent: "center",
-					textAlign: "center",
-					padding: "0 14px",
+					justifyContent: align === "left" ? "flex-start" : "center",
+					textAlign: align,
+					padding: align === "left" ? "0 28px" : "0 14px",
 					borderRadius: s.radius,
 					background: root && !s.hand ? color : s.surface,
 					color: root && !s.hand ? s.onAccent : s.text,
@@ -181,11 +237,13 @@ function TreeNode({ x, y, w, at, color, label, size, root }: { x: number; y: num
 export function MindmapScene({ center, branches }: PropsOf<"mindmap">) {
 	const s = useStyle();
 	const frame = useCurrentFrame();
-	const W = CONTENT_W;
-	const H = stageHeight();
+	const { vertical, contentW: W, stageH } = useLayout();
+	const H = stageH();
 	const frames = useRevealFrames(branches.length);
 	const cx = W / 2;
 	const cy = H / 2;
+	// Branch and leaf distances: wide in a wide frame, tall in a tall one.
+	const [bX, bY, lX, lY] = vertical ? [W / 2 - 170, H * 0.3, 160, 210] : [470, 255, 250, 150];
 	const n = branches.length;
 	const core = useAppear(0, { damping: 13 });
 	const angle = (k: number) => rad(-90 + (k * 360) / n + (n % 2 ? 0 : 180 / n));
@@ -197,19 +255,19 @@ export function MindmapScene({ center, branches }: PropsOf<"mindmap">) {
 				<svg width={W} height={H} style={{ position: "absolute", inset: 0, overflow: "visible" }}>
 					{branches.map((b, k) => {
 						const a = angle(k);
-						const bx = cx + Math.cos(a) * 470;
-						const by = cy + Math.sin(a) * 255;
+						const bx = cx + Math.cos(a) * bX;
+						const by = cy + Math.sin(a) * bY;
 						const draw = ramp(frame, frames[k]! - 12, frames[k]! + 2);
 						const color = accentAt(s, k);
-						const ctrl = { x: cx + Math.cos(a - 0.35) * 250, y: cy + Math.sin(a - 0.35) * 140 };
+						const ctrl = { x: cx + Math.cos(a - 0.35) * bX * 0.53, y: cy + Math.sin(a - 0.35) * bY * 0.55 };
 						return (
 							<g key={k}>
 								<path d={`M ${cx} ${cy} Q ${ctrl.x} ${ctrl.y} ${bx} ${by}`} fill="none" stroke={color} strokeWidth={s.hand ? 6 : 9} strokeLinecap="round" pathLength={1} strokeDasharray={1} strokeDashoffset={1 - draw} />
 								{b.children.map((_, j) => {
 									const spread = (j - (b.children.length - 1) / 2) * 0.32;
 									const ca = a + spread;
-									const tx = clampX(bx + Math.cos(ca) * 250, 220);
-									const ty = clampY(by + Math.sin(ca) * 150);
+									const tx = clampX(bx + Math.cos(ca) * lX, 220);
+									const ty = clampY(by + Math.sin(ca) * lY);
 									const d2 = ramp(frame, frames[k]! + 6 + j * 4, frames[k]! + 18 + j * 4);
 									return <path key={j} d={`M ${bx} ${by} L ${tx} ${ty}`} stroke={color} strokeWidth={3} strokeLinecap="round" opacity={0.7} pathLength={1} strokeDasharray={1} strokeDashoffset={1 - d2} />;
 								})}
@@ -219,15 +277,15 @@ export function MindmapScene({ center, branches }: PropsOf<"mindmap">) {
 				</svg>
 				{branches.map((b, k) => {
 					const a = angle(k);
-					const bx = cx + Math.cos(a) * 470;
-					const by = cy + Math.sin(a) * 255;
+					const bx = cx + Math.cos(a) * bX;
+					const by = cy + Math.sin(a) * bY;
 					const color = accentAt(s, k);
 					return (
 						<MindBranch key={k} at={frames[k]!} color={color} x={clampX(bx, 300)} y={by} label={b.label}>
 							{b.children.map((c, j) => {
 								const spread = (j - (b.children.length - 1) / 2) * 0.32;
 								const ca = a + spread;
-								return <MindLeaf key={j} at={frames[k]! + 12 + j * 4} color={color} x={clampX(bx + Math.cos(ca) * 250, 220)} y={clampY(by + Math.sin(ca) * 150)} label={c} />;
+								return <MindLeaf key={j} at={frames[k]! + 12 + j * 4} color={color} x={clampX(bx + Math.cos(ca) * lX, 220)} y={clampY(by + Math.sin(ca) * lY)} label={c} />;
 							})}
 						</MindBranch>
 					);
@@ -235,9 +293,9 @@ export function MindmapScene({ center, branches }: PropsOf<"mindmap">) {
 				<div
 					style={{
 						position: "absolute",
-						left: cx - 190,
+						left: cx - (vertical ? 170 : 190),
 						top: cy,
-						width: 380,
+						width: vertical ? 340 : 380,
 						minHeight: 150,
 						transform: `translateY(-50%) scale(${core})`,
 						display: "flex",
@@ -289,11 +347,17 @@ function MindLeaf({ at, color, x, y, label }: { at: number; color: string; x: nu
 /** Circle centres and radius for 2 or 3 sets in a box. */
 export function vennLayout(n: number, W: number, H: number) {
 	if (n === 2) {
+		// Side by side when the box is wide, one above the other when it is tall.
+		if (H > W) {
+			const r = Math.min(W * 0.42, H * 0.3, 380);
+			const d = r * 0.62;
+			return { r, centers: [{ x: W / 2, y: H / 2 - d }, { x: W / 2, y: H / 2 + d }], middle: { x: W / 2, y: H / 2 } };
+		}
 		const r = Math.min(H * 0.43, 350);
 		const d = r * 0.62;
 		return { r, centers: [{ x: W / 2 - d, y: H / 2 }, { x: W / 2 + d, y: H / 2 }], middle: { x: W / 2, y: H / 2 } };
 	}
-	const r = Math.min(H * 0.36, 300);
+	const r = Math.min(H * 0.36, W * 0.32, 300);
 	const d = r * 0.6;
 	const my = H / 2 + r * 0.12;
 	const centers = [-90, 30, 150].map((a) => ({ x: W / 2 + Math.cos(rad(a)) * d, y: my + Math.sin(rad(a)) * d }));
@@ -307,10 +371,11 @@ function vennFill(s: VisualStyle, color: string) {
 export function VennScene({ heading, sets, overlap, overlapLabel }: PropsOf<"venn">) {
 	const s = useStyle();
 	const frame = useCurrentFrame();
-	const W = CONTENT_W;
-	const H = stageHeight(heading);
+	const { contentW: W, stageH } = useLayout();
+	const H = stageH(heading);
 	const frames = useRevealFrames(sets.length + 1);
 	const { r, centers, middle } = vennLayout(sets.length, W, H);
+	const stacked = sets.length === 2 && H > W;
 	const midAt = frames[sets.length]!;
 	const mid = useAppear(midAt, { damping: 14 });
 	const pulse = interpolate(frame - midAt, [0, 10, 24], [0, 1, 0], { extrapolateLeft: "clamp", extrapolateRight: "clamp" });
@@ -331,8 +396,9 @@ export function VennScene({ heading, sets, overlap, overlapLabel }: PropsOf<"ven
 					// Items sit in the part of the circle away from the middle; the label sits beyond them.
 					const ix = c.x + (ox / len) * r * 0.38;
 					const iy = c.y + (oy / len) * r * 0.38;
-					const lx = c.x + (ox / len) * r * (sets.length === 2 ? 0.2 : 1.12);
-					const ly = sets.length === 2 ? c.y - r - 34 : c.y + (oy / len) * r * 1.12;
+					// Two sets: labels above the circles (side by side), or above the top one and below the bottom one (stacked).
+					const lx = stacked ? c.x : c.x + (ox / len) * r * (sets.length === 2 ? 0.2 : 1.12);
+					const ly = stacked ? c.y + (oy / len) * (r + 40) : sets.length === 2 ? c.y - r - 34 : c.y + (oy / len) * r * 1.12;
 					return <VennSet key={k} at={frames[k]!} color={accentAt(s, k)} label={set.label} items={set.items} ix={ix} iy={iy} lx={lx} ly={ly} />;
 				})}
 				<div style={{ position: "absolute", left: middle.x - 150, top: middle.y, width: 300, transform: `translateY(-50%) scale(${0.7 + 0.3 * mid})`, opacity: mid, textAlign: "center" }}>
@@ -416,10 +482,11 @@ export function ProsConsScene({ heading, pros, cons, verdict }: PropsOf<"proscon
 	const s = useStyle();
 	const frames = useRevealFrames(pros.length + cons.length);
 	const verdictP = useAppear(verdict ? Math.max(...frames) + 30 : null);
+	const { vertical } = useLayout();
 	return (
 		<SceneFrame heading={heading}>
-			<div style={{ ...texture(s), display: "flex", flexDirection: "column", gap: 32, flex: 1, minHeight: 0 }}>
-				<div style={{ display: "flex", gap: 40, alignItems: "stretch" }}>
+			<div style={{ ...texture(s), display: "flex", flexDirection: "column", gap: 32, flex: vertical ? undefined : 1, minHeight: 0 }}>
+				<div style={{ display: "flex", flexDirection: vertical ? "column" : "row", gap: vertical ? 32 : 40, alignItems: "stretch" }}>
 					<ProsConsColumn title="Pros" sign="+" color={s.positive} items={pros} frames={frames.slice(0, pros.length)} />
 					<ProsConsColumn title="Cons" sign="−" color={s.accent2} items={cons} frames={frames.slice(pros.length)} />
 				</div>

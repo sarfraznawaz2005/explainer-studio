@@ -49,9 +49,18 @@ export type VoiceStatus = z.infer<typeof VoiceStatus>;
 export const Voice = z.object({
 	id: VoiceId,
 	name: z.string(),
-	accent: z.enum(["American", "British"]),
+	/** Short label: "American", "British", "Hindi", "Urdu", ... */
+	accent: z.string(),
+	/** Heading for lists: "American English", "Hindi", ... */
+	group: z.string(),
+	/** Plan language code the voice speaks (see LANGUAGES). */
+	language: z.string(),
 	gender: z.enum(["female", "male"]),
 	recommended: z.boolean(),
+	/** Kokoro for most languages; Piper for Urdu, which Kokoro does not speak. */
+	engine: z.enum(["kokoro", "piper"]),
+	/** Bytes still to download before the first use (Piper voices come on demand). */
+	downloadBytes: z.number(),
 });
 export type Voice = z.infer<typeof Voice>;
 

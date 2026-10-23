@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { BulletsProps, ChartProps, CodeProps, DiagramLabels, FigureFile, FigureProps, FlowProps, SCENE_PROPS, SummaryProps, SvgMarkup, VideoPlan, type Scene, type SceneType, type VideoPlanInput } from "@shared/plan/schema";
 import { SCENE_LABELS } from "@shared/plan/describe";
-import { languageLabel, type Outline, type PlanSettings } from "@shared/planner";
+import { languageLabel, VIDEO_FORMATS, type Outline, type PlanSettings } from "@shared/planner";
 import type { Source } from "@shared/source";
 import { describeIssues } from "../ai/structured";
 import type { PlannerAi } from "./ai";
@@ -27,9 +27,24 @@ const say = z.string().trim().min(1).max(600);
 const label = (max: number) => z.string().trim().min(1).max(max);
 
 /** Figures the model may show: source figure id → file name in source/figures. */
-export type FigureRef = { id: string; file: string; caption: string | null };
+export type FigureRef = { id: string; file: string; caption: string | null; origin?: "source" | "mine" | "web"; mustUse?: boolean; chapter?: number };
 export const figureRefs = (source: Pick<Source, "figures">): FigureRef[] =>
-	source.figures.map((f) => ({ id: f.id, file: f.file.split("/").pop()!, caption: f.caption })).filter((f) => FigureFile.safeParse(f.file).success);
+	source.figures
+		.map((f) => ({ id: f.id, file: f.file.split("/").pop()!, caption: f.caption, origin: f.origin, mustUse: f.mustUse, chapter: f.search?.chapter }))
+		.filter((f) => FigureFile.safeParse(f.file).success);
+
+const kindOf = (f: FigureRef) => (f.origin === "web" ? "photo from the web" : f.origin === "mine" ? "the creator's own picture" : "figure from the material");
+
+/**
+ * Photos each chapter should show: web photos found for it, and the creator's
+ * must-use pictures spread over the chapters in order (chapters are written in
+ * parallel, so each picture gets one home and is not shown twice).
+ */
+export function chapterPictures(figures: FigureRef[], chapters: number, index: number): FigureRef[] {
+	const web = figures.filter((f) => f.origin === "web" && f.chapter === index + 1);
+	const mine = figures.filter((f) => f.origin === "mine" && f.mustUse);
+	return [...web, ...mine.filter((_, k) => k % Math.max(1, chapters) === index)];
+}
 
 /** Scene types the model may choose from: the level's list without the cards it never writes (and no figure scenes without figures). */
 export const contentTypes = (a: Audience, figures: FigureRef[] = []) => a.scenes.filter((t) => t !== "title" && t !== "chapter" && (t !== "figure" || figures.length > 0));
@@ -129,12 +144,22 @@ export function scriptSystem(s: PlanSettings, figures: FigureRef[] = []): string
 		`- Each scene has ${a.sentencesPerScene[0]} to ${a.sentencesPerScene[1]} narration sentences and at most ${a.maxItems} items on screen.`,
 		"- Items (bullets, steps, bars, nodes, labels, pins, events, rows, dialogue lines, quiz questions, trace and code steps) appear in order while the narration goes on: item k appears at sentence k × sentences ÷ items. So talk about the items in the same order, about one item per sentence.",
 		"- Use code and trace scenes only when the topic is programming or an algorithm. Use figure scenes and diagrams with a figure only with the figures listed below.",
+		"- Photos (from the web or the creator) go in figure scenes: the narration talks about what the photo shows, the caption names it, callouts are optional. Show each photo at most once in the video, and only in the chapter it is planned for.",
 		"- On-screen text is short (labels, not sentences). The narration explains; it does not read the screen word for word.",
 		"- Teach only what the source material says. You may add an analogy, a question to the viewer or a simple everyday example, but no new facts, numbers, names or dates.",
 		"- Copy code, numbers and definitions exactly from the material.",
 		"- `intro` is one sentence spoken on the chapter card that says what the chapter is about.",
 		`- Write all narration and on-screen text in ${languageLabel(s.language)}. Tone: ${s.tone}.`,
-		...(figures.length ? ["", "Figures from the source you may show (id: caption):", ...figures.slice(0, 40).map((f) => `- ${f.id}: ${f.caption ?? "(no caption)"}`)] : []),
+		...(s.format === "vertical"
+			? [
+					"",
+					"This is a vertical video (9:16) watched on a phone: Shorts, TikTok, Reels. The screen is narrow and tall.",
+					"- Keep on-screen text very short: labels of 1 to 4 words, and at most 4 items in a scene.",
+					"- Prefer scenes with one big idea: kinetic text, a counter, a definition, a short flow, a quiz or pause question. Tables get at most 3 columns.",
+					"- Grab attention in the first sentence of every scene. Keep the pace quick.",
+				]
+			: []),
+		...(figures.length ? ["", "Figures and photos you may show (id, kind: caption):", ...figures.slice(0, 40).map((f) => `- ${f.id} (${kindOf(f)}): ${f.caption ?? "(no caption)"}`)] : []),
 	].join("\n");
 }
 
@@ -179,6 +204,10 @@ export function scriptPrompt(ctx: ChapterContext, index: number): string {
 		index === 0 ? `The video opens with this hook, already spoken before this chapter. Do not repeat it: ${outline.hook.join(" ")}` : "",
 		last ? "This is the last chapter: end with a short recap of the whole video and a friendly goodbye." : "",
 		ctx.instructions ? `Extra instructions from the creator (follow them): ${ctx.instructions}` : "",
+		...(() => {
+			const pics = chapterPictures(figureRefs(ctx.source), outline.chapters.length, index);
+			return pics.length ? ["Photos planned for this chapter (show each in its own figure scene where it fits the narration):", ...pics.map((f) => `- ${f.id}: ${f.caption ?? "(no caption)"}`)] : [];
+		})(),
 		"",
 		"Source material for this chapter (section ids in brackets):",
 		chapterSource(ctx, index),
@@ -240,13 +269,15 @@ export function toScenes(index: number, script: ChapterScript, outline: Outline,
 	return [card, ...scenes];
 }
 
-/** The hook: a title card with the first 15 seconds of narration. */
-export function hookScene(outline: Outline, s: PlanSettings): Scene {
-	const kicker = clip([outline.subject, s.level].filter(Boolean).join(" · "), 60);
+/**
+ * The hook: a title card with the first 15 seconds of narration. No kicker: the subject
+ * and audience level are for the creator, not something to show viewers.
+ */
+export function hookScene(outline: Outline, _s: PlanSettings): Scene {
 	return {
 		id: "hook",
 		type: "title",
-		props: { title: clip(outline.title, 120), subtitle: outline.subtitle ? clip(outline.subtitle, 200) : undefined, kicker },
+		props: { title: clip(outline.title, 120), subtitle: outline.subtitle ? clip(outline.subtitle, 200) : undefined },
 		narration: outline.hook.map((text, j) => ({ id: `hook-n${j + 1}`, text })),
 		cues: [],
 		transition: { type: "fade", durationMs: 400 },
@@ -282,8 +313,8 @@ export function assemblePlan(outline: Outline, s: PlanSettings, chapters: Scene[
 			style: s.style === "auto" ? outline.style : s.style,
 			voice: s.voice,
 			fps: 30,
-			width: 1920,
-			height: 1080,
+			width: VIDEO_FORMATS[s.format].width,
+			height: VIDEO_FORMATS[s.format].height,
 			wordsPerMinute: a.wordsPerMinute,
 		},
 		chapters: outline.chapters.map((ch, i) => ({ id: ch.id, title: clip(ch.title, 120), goal: ch.goal, scenes: i === 0 ? [hookScene(outline, s), ...chapters[i]!] : chapters[i]! })),

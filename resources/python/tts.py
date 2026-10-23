@@ -3,6 +3,7 @@ Kokoro voice sidecar for Explainer Studio.
 
 Runs inside the app's own venv. Talks JSON lines over stdin/stdout:
   in : {"id": "1", "cmd": "speak", "text": "...", "voice": "af_heart", "speed": 1.0, "lang": "en-us", "out": "C:/.../x.wav"}
+       or {"id": "2", "cmd": "speak", "text": "...", "piper": "ur_PK-fasih-medium", "speed": 1.0, "out": "..."}
   out: {"id": "1", "ok": true, "durationMs": 2310, "sampleRate": 24000}
 Commands: speak, voices, ping, quit. On start it prints {"type": "ready", ...}.
 
@@ -13,8 +14,10 @@ The output path comes from the app (never from user input) and must end in .wav.
 import argparse
 import json
 import os
+import re
 import sys
 import time
+import unicodedata
 import wave
 
 # Keep the protocol channel clean: libraries that print() write to stderr instead.
@@ -44,7 +47,62 @@ def write_wav(path, samples, sample_rate):
     return int(round(len(pcm) * 1000 / sample_rate))
 
 
-def speak(kokoro, req):
+# Piper voice names are file names in the app's piper folder: nothing else is loaded.
+PIPER_KEY = re.compile(r"^[A-Za-z]{2}_[A-Za-z]{2}-[a-z0-9_]{1,40}-(x_low|low|medium|high)$")
+# espeak only ends a clause at Latin punctuation; Urdu and Arabic marks are mapped to it.
+NATIVE_PUNCT = str.maketrans({"\u06d4": ".", "\u060c": ",", "\u061f": "?", "\u061b": ";", "\u0964": "."})
+
+
+class Piper:
+    """
+    Piper (VITS) voices, run directly with onnxruntime and espeak, the same phonemes
+    Piper itself uses. Used for languages Kokoro does not speak (Urdu).
+    """
+
+    def __init__(self, folder):
+        self.folder = folder
+        self.loaded = {}
+
+    def load(self, key):
+        if key in self.loaded:
+            return self.loaded[key]
+        if not PIPER_KEY.match(key):
+            raise ValueError("Not a Piper voice name")
+        import onnxruntime
+        from phonemizer.backend import EspeakBackend
+
+        with open(os.path.join(self.folder, key + ".onnx.json"), encoding="utf-8") as f:
+            cfg = json.load(f)
+        opts = onnxruntime.SessionOptions()
+        opts.log_severity_level = 3
+        session = onnxruntime.InferenceSession(os.path.join(self.folder, key + ".onnx"), opts, providers=["CPUExecutionProvider"])
+        backend = EspeakBackend(cfg["espeak"]["voice"], preserve_punctuation=True, with_stress=True)
+        self.loaded[key] = (cfg, session, backend)
+        return self.loaded[key]
+
+    def create(self, text, key, speed):
+        import numpy as np
+
+        cfg, session, backend = self.load(key)
+        ids_of = cfg["phoneme_id_map"]
+        phonemes = backend.phonemize([text.translate(NATIVE_PUNCT)], strip=True)[0]
+        # Piper's ids are per code point of the decomposed IPA, each followed by the pad.
+        pad = ids_of["_"]
+        ids = ids_of["^"] + pad
+        for ch in unicodedata.normalize("NFD", phonemes):
+            if ch in ids_of:
+                ids += ids_of[ch] + pad
+        ids += ids_of["$"]
+        inf = cfg.get("inference", {})
+        scales = np.array([inf.get("noise_scale", 0.667), inf.get("length_scale", 1.0) / speed, inf.get("noise_w", 0.8)], dtype=np.float32)
+        audio = session.run(
+            None,
+            {"input": np.array([ids], dtype=np.int64), "input_lengths": np.array([len(ids)], dtype=np.int64), "scales": scales},
+        )[0].squeeze()
+        return audio, int(cfg["audio"]["sample_rate"])
+
+
+def speak(kokoro, piper, req):
     text = str(req.get("text", "")).strip()
     out = str(req.get("out", ""))
     voice = str(req.get("voice", "af_heart"))
@@ -60,7 +118,10 @@ def speak(kokoro, req):
         raise ValueError("Speed must be between 0.5 and 2.0")
     os.makedirs(os.path.dirname(out), exist_ok=True)
     t0 = time.perf_counter()
-    samples, sample_rate = kokoro.create(text, voice=voice, speed=speed, lang=lang)
+    if req.get("piper"):
+        samples, sample_rate = piper.create(text, str(req["piper"]), speed)
+    else:
+        samples, sample_rate = kokoro.create(text, voice=voice, speed=speed, lang=lang)
     duration_ms = write_wav(out, samples, sample_rate)
     return {"durationMs": duration_ms, "sampleRate": sample_rate, "elapsedMs": int((time.perf_counter() - t0) * 1000)}
 
@@ -69,6 +130,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--model", required=True)
     ap.add_argument("--voices", required=True)
+    ap.add_argument("--piper-dir", default="")
     args = ap.parse_args()
 
     try:
@@ -78,6 +140,7 @@ def main():
 
         t0 = time.perf_counter()
         kokoro = Kokoro(args.model, args.voices)
+        piper = Piper(args.piper_dir)
         voices = sorted(kokoro.get_voices())
     except Exception as e:  # noqa: BLE001 - report any start failure to the app
         send({"type": "fatal", "error": f"{type(e).__name__}: {e}"})
@@ -104,7 +167,7 @@ def main():
             rid = req.get("id")
             cmd = req.get("cmd")
             if cmd == "speak":
-                send({"id": rid, "ok": True, **speak(kokoro, req)})
+                send({"id": rid, "ok": True, **speak(kokoro, piper, req)})
             elif cmd == "voices":
                 send({"id": rid, "ok": True, "voices": voices})
             elif cmd == "ping":

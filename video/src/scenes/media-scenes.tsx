@@ -4,7 +4,9 @@ import type { AnimState, PropsOf, SvgAnimation } from "../../../src/shared/plan/
 import { sanitizeSvg, viewBoxOf, type SvgNode } from "../../../src/shared/plan/svg";
 import { msToFrames, type TimedScene } from "../../../src/shared/plan/timing";
 import { outline, texture, type VisualStyle } from "../styles/styles";
-import { accentAt, appearStyle, borders, CONTENT_W, ease, ramp, SceneFrame, sentenceFrame, stageHeight, useAppear, useRevealFrames, useScene, useStyle } from "./kit";
+import { accentAt, appearStyle, borders, ease, ramp, SceneFrame, sentenceFrame, useAppear, useLayout, useRevealFrames, useScene, useStyle } from "./kit";
+import { photoLayout } from "./photo-layout";
+import type { FigureMeta } from "../../../src/shared/source";
 
 /* Source figure (Ken Burns + callouts), labelled diagram and svg-custom drawings. */
 
@@ -128,12 +130,13 @@ const idPrefix = (sceneId: string) => `es-${sceneId.replace(/[^\w-]/g, "_")}`;
 export function SvgScene({ heading, svg, animations, caption }: PropsOf<"svg">) {
 	const s = useStyle();
 	const { timed } = useScene();
-	const H = stageHeight(heading) - (caption ? 70 : 0);
+	const { contentW, stageH } = useLayout();
+	const H = stageH(heading) - (caption ? 70 : 0);
 	const cap = useAppear(caption ? 20 : null, { damping: 200 });
 	return (
 		<SceneFrame heading={heading} center={!heading}>
 			<div style={{ ...texture(s), display: "flex", flexDirection: "column", alignItems: "center", gap: 24 }}>
-				<SvgDrawing markup={svg} animations={animations} width={CONTENT_W} height={H} prefix={idPrefix(timed.scene.id)} />
+				<SvgDrawing markup={svg} animations={animations} width={contentW} height={H} prefix={idPrefix(timed.scene.id)} />
 				{caption ? <div style={{ ...appearStyle(cap, 10), fontSize: 36, color: s.muted, textAlign: "center" }}>{caption}</div> : null}
 			</div>
 		</SceneFrame>
@@ -157,19 +160,132 @@ function FigurePlaceholder({ file, width, height }: { file: string; width: numbe
 }
 
 /** A source figure image; a placeholder when there is no figure folder or the file cannot be read. */
-function FigureImage({ file, maxW, maxH }: { file: string; maxW: number; maxH: number }) {
+function FigureImage({ file, maxW, maxH, credit = true }: { file: string; maxW: number; maxH: number; credit?: boolean }) {
 	const { figureBase } = useScene();
 	const [failed, setFailed] = useState(false);
 	if (!figureBase || failed) return <FigurePlaceholder file={file} width={Math.min(maxW, 1200)} height={Math.min(maxH, 680)} />;
-	return <Img src={`${figureBase}${encodeURIComponent(file)}`} onError={() => setFailed(true)} maxRetries={1} style={{ display: "block", maxWidth: maxW, maxHeight: maxH, width: "auto", height: "auto" }} />;
+	const img = <Img src={`${figureBase}${encodeURIComponent(file)}`} onError={() => setFailed(true)} maxRetries={1} style={{ display: "block", maxWidth: maxW, maxHeight: maxH, width: "auto", height: "auto" }} />;
+	return credit ? (
+		<div style={{ position: "relative" }}>
+			{img}
+			<PhotoCredit file={file} />
+		</div>
+	) : (
+		img
+	);
 }
 
-export function FigureScene({ figure, caption, callouts, focus }: PropsOf<"figure">) {
+/** The small credit a web photo's license asks for, in the picture's corner. Nothing for other pictures. */
+function PhotoCredit({ file }: { file: string }) {
+	const { figureMeta } = useScene();
+	const text = figureMeta?.[file]?.credit;
+	if (!text) return null;
+	return (
+		<div style={{ position: "absolute", right: 0, bottom: 0, maxWidth: "90%", padding: "4px 10px", background: "rgba(0,0,0,0.55)", color: "#ffffff", fontSize: 17, lineHeight: 1.25, fontFamily: "system-ui, sans-serif", borderTopLeftRadius: 6, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+			{text}
+		</div>
+	);
+}
+
+/**
+ * A photo (the creator's own or one found on the web) fills the frame: cropped
+ * around its subject when the shapes are close, else shown whole over a blurred
+ * copy of itself. A slow zoom moves towards the subject, in on one scene and out
+ * on the next. The caption sits on a dark fade so it reads on any photo.
+ */
+function PhotoScene({ figure, caption, callouts, focus, meta }: PropsOf<"figure"> & { meta: FigureMeta }) {
+	const s = useStyle();
+	const frame = useCurrentFrame();
+	const { width: W, height: H } = useVideoConfig();
+	const { figureBase, timed } = useScene();
+	const { vertical, pad } = useLayout();
+	const frames = useRevealFrames(callouts.length);
+	const cap = useAppear(caption ? 14 : null, { damping: 200 });
+	const subject = focus ?? meta.focus;
+	const box = photoLayout(meta, { width: W, height: H }, subject, vertical ? 40 : 60);
+	const t = ease(ramp(frame, 0, timed.durationInFrames));
+	// Alternate the move between scenes, so a run of photos does not all push in.
+	const inward = !!focus || timed.scene.id.split("").reduce((n, c) => n + c.charCodeAt(0), 0) % 2 === 0;
+	const far = focus ? Math.min(focus.zoom, 1.3) : 1.08;
+	const zoom = inward ? 1 + (far - 1) * t : far - (far - 1) * t;
+	const fx = subject?.x ?? 50;
+	const fy = subject?.y ?? 45;
+	const src = figureBase ? `${figureBase}${encodeURIComponent(figure)}` : null;
+	if (!src) return <FigurePlaceholder file={figure} width={Math.min(W - 120, 1200)} height={Math.min(H - 200, 680)} />;
+	return (
+		<SceneFrame bleed>
+			<div style={{ position: "absolute", inset: 0, overflow: "hidden", background: "#0b0b10" }}>
+				{box.mode === "fit" ? (
+					// Fills the frame behind a photo of another shape: the same photo, large, blurred and darker.
+					<Img src={src} maxRetries={1} style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", filter: "blur(38px) brightness(0.55) saturate(1.15)", transform: `scale(${1.15 + (zoom - 1) * 0.5})` }} />
+				) : null}
+				{/* The box stays put (a fitted card never grows past the frame); the photo zooms inside it. */}
+				<div
+					style={{
+						position: "absolute",
+						left: box.left,
+						top: box.top,
+						width: box.width,
+						height: box.height,
+						overflow: "hidden",
+						...(box.mode === "fit" ? { borderRadius: 14, boxShadow: "0 24px 70px rgba(0,0,0,0.55)" } : {}),
+					}}
+				>
+					<div style={{ position: "absolute", inset: 0, transform: `scale(${zoom})`, transformOrigin: `${fx}% ${fy}%` }}>
+						<Img src={src} maxRetries={1} style={{ display: "block", width: "100%", height: "100%" }} />
+						{callouts.map((c, i) => (
+							<Callout key={i} index={i} at={frames[i]!} x={c.x} y={c.y} text={c.text} zoom={zoom} />
+						))}
+					</div>
+				</div>
+				{caption ? (
+					<div style={{ position: "absolute", left: 0, right: 0, bottom: 0, height: vertical ? pad.bottom + 260 : 300, background: "linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0.72) 100%)", opacity: cap }} />
+				) : null}
+				{caption ? (
+					<div
+						style={{
+							...appearStyle(cap, 10),
+							position: "absolute",
+							left: pad.side,
+							right: pad.side,
+							bottom: vertical ? pad.bottom : 70,
+							textAlign: "center",
+							color: "#ffffff",
+							fontFamily: s.bodyFont,
+							fontSize: vertical ? 46 : 40,
+							fontWeight: 600,
+							lineHeight: 1.25,
+							textShadow: "0 2px 12px rgba(0,0,0,0.6)",
+						}}
+					>
+						{caption}
+					</div>
+				) : null}
+				{meta.credit ? (
+					<div style={{ position: "absolute", right: vertical ? pad.side : 18, bottom: vertical ? pad.bottom - 56 : 14, maxWidth: "80%", padding: "4px 10px", borderRadius: 6, background: "rgba(0,0,0,0.5)", color: "rgba(255,255,255,0.92)", fontSize: vertical ? 22 : 17, fontFamily: "system-ui, sans-serif", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+						{meta.credit}
+					</div>
+				) : null}
+			</div>
+		</SceneFrame>
+	);
+}
+
+export function FigureScene(props: PropsOf<"figure">) {
+	const { figureMeta } = useScene();
+	const meta = figureMeta?.[props.figure];
+	if (meta?.photo && meta.width > 0 && meta.height > 0) return <PhotoScene {...props} meta={meta} />;
+	return <FramedFigure {...props} />;
+}
+
+/** A figure from the material (a chart, a diagram from a book): framed, with margins, never cropped. */
+function FramedFigure({ figure, caption, callouts, focus }: PropsOf<"figure">) {
 	const s = useStyle();
 	const frame = useCurrentFrame();
 	const { timed } = useScene();
 	const frames = useRevealFrames(callouts.length);
-	const H = stageHeight() - (caption ? 80 : 0);
+	const { contentW, stageH } = useLayout();
+	const H = stageH() - (caption ? 80 : 0);
 	// Slow push-in (Ken Burns) towards the focus point, or the middle of the callouts.
 	const fx = focus?.x ?? (callouts.length ? callouts.reduce((n, c) => n + c.x, 0) / callouts.length : 50);
 	const fy = focus?.y ?? (callouts.length ? callouts.reduce((n, c) => n + c.y, 0) / callouts.length : 50);
@@ -181,11 +297,13 @@ export function FigureScene({ figure, caption, callouts, focus }: PropsOf<"figur
 			<div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 26 }}>
 				<div style={{ ...appearStyle(intro, 20), position: "relative", display: "inline-block", overflow: "hidden", borderRadius: Math.min(18, s.radius), ...borders(outline(s)), boxShadow: s.shadow, background: "#ffffff" }}>
 					<div style={{ position: "relative", transform: `scale(${zoom})`, transformOrigin: `${fx}% ${fy}%` }}>
-						<FigureImage file={figure} maxW={CONTENT_W - 60} maxH={H} />
+						<FigureImage file={figure} maxW={contentW - 60} maxH={H} credit={false} />
 						{callouts.map((c, i) => (
 							<Callout key={i} index={i} at={frames[i]!} x={c.x} y={c.y} text={c.text} zoom={zoom} />
 						))}
 					</div>
+					{/* Outside the zoom, so the slow push never crops the credit. */}
+					<PhotoCredit file={figure} />
 				</div>
 				{caption ? <div style={{ ...appearStyle(cap, 10), ...texture(s), fontSize: 34, color: s.muted, textAlign: "center", maxWidth: 1500 }}>{caption}</div> : null}
 			</div>
@@ -200,12 +318,14 @@ function Callout({ index, at, x, y, text, zoom }: { index: number; at: number; x
 	const color = accentAt(s, index);
 	const flip = x > 62;
 	const ring = ((frame - at) % 45) / 45;
+	// Tall frames: pictures are narrow, so long callouts wrap.
+	const wrap = useLayout().vertical;
 	if (frame < at) return null;
 	return (
 		<div style={{ position: "absolute", left: `${x}%`, top: `${y}%`, transform: `scale(${1 / zoom})`, transformOrigin: "0 0" }}>
 			<div style={{ position: "absolute", left: -34, top: -34, width: 68, height: 68, borderRadius: 99, border: `3px solid ${color}`, opacity: (1 - ring) * 0.8, transform: `scale(${0.4 + ring * 0.8})` }} />
 			<div style={{ position: "absolute", left: -22, top: -22, width: 44, height: 44, borderRadius: 99, background: color, color: s.onAccent, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 24, fontWeight: 800, transform: `scale(${p})`, boxShadow: "0 0 0 4px #ffffff" }}>{index + 1}</div>
-			<div style={{ position: "absolute", top: -26, left: flip ? undefined : 36, right: flip ? 36 : undefined, opacity: p, whiteSpace: "nowrap", padding: "8px 18px", borderRadius: 12, background: "rgba(20,20,30,0.86)", color: "#ffffff", fontFamily: s.bodyFont, fontSize: 28, fontWeight: 600 }}>{text}</div>
+			<div style={{ position: "absolute", top: -26, left: flip ? undefined : 36, right: flip ? 36 : undefined, opacity: p, ...(wrap ? { width: "max-content", maxWidth: 420 } : { whiteSpace: "nowrap" }), padding: "8px 18px", borderRadius: 12, background: "rgba(20,20,30,0.86)", color: "#ffffff", fontFamily: s.bodyFont, fontSize: 28, fontWeight: 600 }}>{text}</div>
 		</div>
 	);
 }
@@ -232,7 +352,9 @@ export function DiagramScene({ heading, figure, svg, labels }: PropsOf<"diagram"
 	const frame = useCurrentFrame();
 	const { timed } = useScene();
 	const frames = useRevealFrames(labels.length);
-	const H = stageHeight(heading);
+	const { vertical, contentW, stageH } = useLayout();
+	const H = stageH(heading);
+	if (vertical) return <NumberedDiagram heading={heading} figure={figure} svg={svg} labels={labels} frames={frames} W={contentW} H={H} />;
 	const picW = 960;
 	const picH = H - 30;
 	const left = labels.map((l, i) => ({ l, i })).filter((o) => o.l.x < 50);
@@ -260,6 +382,56 @@ export function DiagramScene({ heading, figure, svg, labels }: PropsOf<"diagram"
 				</div>
 			</div>
 		</SceneFrame>
+	);
+}
+
+/**
+ * Tall frames: no room for label cards beside the picture. The picture takes the
+ * full width with a numbered dot on each part, and the labels are a numbered list under it.
+ */
+function NumberedDiagram({ heading, figure, svg, labels, frames, W, H }: { heading?: string; figure?: string; svg?: string; labels: PropsOf<"diagram">["labels"]; frames: number[]; W: number; H: number }) {
+	const s = useStyle();
+	const frame = useCurrentFrame();
+	const { timed } = useScene();
+	const intro = useAppear(0, { damping: 200 });
+	const listH = labels.length * (labels.some((l) => l.detail) ? 96 : 66) + 30;
+	const picH = Math.max(360, H - listH);
+	return (
+		<SceneFrame heading={heading} center={!heading}>
+			<div style={{ ...texture(s), display: "flex", flexDirection: "column", alignItems: "center", gap: 34 }}>
+				<div style={{ ...appearStyle(intro, 16), position: "relative", display: "inline-block" }}>
+					{svg ? <SvgDrawing markup={svg} width={W} height={picH} prefix={idPrefix(timed.scene.id)} /> : <FigureImage file={figure!} maxW={W} maxH={picH} />}
+					{labels.map((l, i) => {
+						const dot = interpolate(frame - frames[i]!, [0, 6, 12], [0, 1.3, 1], { extrapolateLeft: "clamp", extrapolateRight: "clamp" });
+						return (
+							<div key={i} style={{ position: "absolute", left: `${l.x}%`, top: `${l.y}%`, width: 46, height: 46, marginLeft: -23, marginTop: -23, borderRadius: 99, background: accentAt(s, i), color: s.onAccent, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 24, fontWeight: 800, transform: `scale(${dot})`, boxShadow: `0 0 0 4px ${s.dark ? s.bg : "#ffffff"}` }}>
+								{i + 1}
+							</div>
+						);
+					})}
+				</div>
+				<div style={{ alignSelf: "stretch", display: "flex", flexDirection: "column", gap: 16 }}>
+					{labels.map((l, i) => (
+						<NumberedLabel key={i} index={i} at={frames[i]!} text={l.text} detail={l.detail} />
+					))}
+				</div>
+			</div>
+		</SceneFrame>
+	);
+}
+
+function NumberedLabel({ index, at, text, detail }: { index: number; at: number; text: string; detail?: string }) {
+	const s = useStyle();
+	const p = useAppear(at + 6, { damping: 200 });
+	const color = accentAt(s, index);
+	return (
+		<div style={{ ...appearStyle(p, 14), display: "flex", gap: 22, alignItems: "baseline" }}>
+			<div style={{ flexShrink: 0, width: 40, textAlign: "right", fontSize: 32, fontWeight: 800, color }}>{index + 1}</div>
+			<div>
+				<span style={{ fontSize: 36, fontWeight: 800, color }}>{text}</span>
+				{detail ? <div style={{ fontSize: 30, color: s.muted, lineHeight: 1.3 }}>{detail}</div> : null}
+			</div>
+		</div>
 	);
 }
 

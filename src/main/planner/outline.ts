@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { languageLabel, Outline, OutlineChapter, type PlanSettings } from "@shared/planner";
+import { languageLabel, lengthLabel, Outline, OutlineChapter, type PlanSettings } from "@shared/planner";
 import { StyleId } from "@shared/plan/schema";
 import type { Source } from "@shared/source";
 import type { PlannerAi } from "./ai";
@@ -28,6 +28,7 @@ export function outlineSystem(s: PlanSettings): string {
 		"- Order chapters so each idea builds on the last. One clear goal per chapter, written as what the viewer can say or do afterwards.",
 		"- Use the teaching arc: a short opening, the ideas one by one, a worked example from the material, a common mistake or misconception, then a recap chapter.",
 		`- Chapter count and depth fit the level: fewer, slower chapters for young viewers; more detail for advanced viewers.`,
+		"- Short videos (3 minutes or less): 1 or 2 chapters, no recap chapter, and get to the point fast. Teach one idea well rather than many ideas briefly.",
 		"- The hook is the first 15 seconds: 2 to 3 short sentences with a question, puzzle or surprise that the video answers. Do not start with 'In this video'.",
 		"- `minutes` is the speaking time of each chapter.",
 		"- `style` (the whole-video look): 'cartoon' for kindergarten and young children; 'chalkboard' for school maths and a hand-drawn classroom feel; 'paper' for notes, writing and humanities; 'blueprint' for engineering, physics and how machines work; 'neon' for computing, technology and modern topics for teens; 'academic' for university and research topics; 'clean' for anything else. Never 'brand' (the user picks that).",
@@ -39,7 +40,7 @@ export function outlinePrompt(source: Pick<Source, "title" | "sections" | "figur
 	const a = audienceFor(s.level);
 	const words = targetWords(s);
 	const length = s.targetMinutes
-		? `Target length: about ${s.targetMinutes} minutes in total (about ${words} words of narration at ${a.wordsPerMinute} words per minute). Chapter minutes must add up to about ${s.targetMinutes}.`
+		? `Target length: about ${lengthLabel(s.targetMinutes)} in total (about ${words} words of narration at ${a.wordsPerMinute} words per minute). Chapter minutes must add up to about ${+s.targetMinutes.toFixed(2)}.`
 		: `Target length: as long as the material needs to be taught well at this level, at ${a.wordsPerMinute} words per minute. Do not pad.`;
 	const body = map ? `Knowledge map of the material (summarised; section ids in brackets):\n\n${mapForPrompt(map)}` : `The material (section ids in brackets):\n\n${sourceForPrompt(source)}`;
 	return [`Material title: ${source.title || "(untitled)"}`, `Level: ${s.level}. Language: ${languageLabel(s.language)}. Tone: ${s.tone}.`, length, "", body].join("\n");
@@ -52,7 +53,9 @@ export function finishOutline(raw: z.output<typeof AiOutline>, source: Pick<Sour
 	if (s.targetMinutes) {
 		const total = chapters.reduce((n, c) => n + c.minutes, 0);
 		const k = total > 0 ? s.targetMinutes / total : 1;
-		if (Math.abs(k - 1) > 0.15) chapters = chapters.map((c) => ({ ...c, minutes: Math.max(0.5, Math.round(c.minutes * k * 2) / 2) }));
+		// Half-minute steps; quarter-minute steps for short videos.
+		const steps = s.targetMinutes <= 5 ? 4 : 2;
+		if (Math.abs(k - 1) > 0.15) chapters = chapters.map((c) => ({ ...c, minutes: Math.max(1 / steps, Math.round(c.minutes * k * steps) / steps) }));
 	}
 	return Outline.parse({ ...raw, chapters, approved: false });
 }

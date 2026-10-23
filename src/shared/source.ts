@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { LicenseCode } from "./assets";
 
 /**
  * A Source is the learning material in one normalised shape, whatever it came
@@ -32,6 +33,24 @@ export const Section = z.object({
 });
 export type Section = z.infer<typeof Section>;
 
+/** Who made a picture found on the web, and its license (only licenses that allow monetised videos). */
+export const PictureCredit = z.object({
+	title: z.string().max(300),
+	creator: z.string().max(200).nullable(),
+	license: LicenseCode,
+	/** The picture's page (Wikimedia Commons, Flickr, NASA, ...). */
+	pageUrl: z.string().url(),
+	/** Where it was found: "wikimedia", "flickr", "nasa", ... */
+	provider: z.string().max(40),
+	/** The credit line the license requires; null when none is needed. */
+	line: z.string().max(600).nullable(),
+});
+export type PictureCredit = z.infer<typeof PictureCredit>;
+
+/** Where a picture came from: the material (default), the user, or a web search. */
+export const FigureOrigin = z.enum(["source", "mine", "web"]);
+export type FigureOrigin = z.infer<typeof FigureOrigin>;
+
 export const Figure = z.object({
 	id: z.string(),
 	/** Path relative to the draft folder, e.g. "source/figures/f3.png". */
@@ -42,8 +61,43 @@ export const Figure = z.object({
 	width: z.number().int().nonnegative(),
 	height: z.number().int().nonnegative(),
 	mediaType: z.string(),
+	/** Not set: from the material. */
+	origin: FigureOrigin.optional(),
+	/** Web pictures: who made it and the license. */
+	credit: PictureCredit.optional(),
+	/** The user wants this picture in the video. */
+	mustUse: z.boolean().optional(),
+	/** Where the main subject is (percent of width and height), from the vision model. Crops and zooms keep it in view. */
+	focus: z.object({ x: z.number().min(0).max(100), y: z.number().min(0).max(100) }).optional(),
+	/** Web pictures: what was searched for, so "find another" can search again. */
+	search: z.object({ subject: z.string().max(120), queries: z.array(z.string().max(80)).max(4), chapter: z.number().int().min(1).optional() }).optional(),
 });
 export type Figure = z.infer<typeof Figure>;
+
+/**
+ * What the video needs to know about a picture besides its file (by file name):
+ * its size, where the subject is, whether it is a photo (fills the frame) and
+ * the short credit its license asks for.
+ */
+export type FigureMeta = { width: number; height: number; photo: boolean; focus?: { x: number; y: number }; credit?: string };
+
+/** Short on-screen credit: "Photo: Jane Doe, CC BY 4.0, Flickr". */
+export function shortCredit(c: PictureCredit): string {
+	const where = c.provider === "wikimedia" ? "Wikimedia Commons" : c.provider === "flickr" ? "Flickr" : c.provider === "nasa" ? "NASA" : c.provider;
+	const lic = c.license === "PD" ? "public domain" : c.license === "CC0-1.0" ? "CC0" : c.license.replace(/^CC-BY-/, "CC BY ");
+	return [`Photo: ${(c.creator ?? "unknown").slice(0, 60)}`, lic, where].join(", ");
+}
+
+/** Picture details by file name, for the video (Studio preview and renders). */
+export function figureMetaOf(figures: Figure[]): Record<string, FigureMeta> {
+	const out: Record<string, FigureMeta> = {};
+	for (const f of figures) {
+		const name = f.file.split("/").pop()!;
+		// The user's own pictures and web photos fill the frame; figures from the material keep their frame and margins.
+		out[name] = { width: f.width, height: f.height, photo: f.origin === "mine" || f.origin === "web", ...(f.focus ? { focus: f.focus } : {}), ...(f.credit ? { credit: shortCredit(f.credit) } : {}) };
+	}
+	return out;
+}
 
 export const ReadMethod = z.enum(["text", "vision", "local-ocr"]);
 export type ReadMethod = z.infer<typeof ReadMethod>;
@@ -68,6 +122,8 @@ export const Source = z.object({
 	stats: z.object({ words: z.number().int(), chars: z.number().int() }),
 	/** Things the user should know (a page could not be read, LibreOffice missing for one file, ...). */
 	warnings: z.array(z.string()),
+	/** The last web picture search (so the script step does not search again). */
+	pictureSearch: z.object({ at: z.string(), found: z.number().int() }).optional(),
 });
 export type Source = z.infer<typeof Source>;
 

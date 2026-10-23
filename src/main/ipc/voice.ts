@@ -47,10 +47,13 @@ export function registerVoiceIpc(): void {
 		voiceEngine().cancel();
 		return { ok: true as const };
 	});
-	handle(voiceChannels.voices, async () => describeVoices(await voiceEngine().voiceIds()));
+	handle(voiceChannels.voices, async () => {
+		const engine = voiceEngine();
+		return describeVoices(await engine.voiceIds(), engine.piperDownloaded);
+	});
 	handle(voiceChannels.preview, async ({ voice, speed, text }) => {
 		const engine = voiceEngine();
-		const name = describeVoices([voice])[0];
+		const name = describeVoices([voice]).find((v) => v.id === voice);
 		if (!name) throw new Error("Unknown voice");
 		const say = text ?? sampleSentence(name);
 		const out = await previewFile(voice, speed, say);

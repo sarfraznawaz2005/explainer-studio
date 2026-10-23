@@ -29,7 +29,7 @@ import { LEVELS, type Level } from "@shared/ipc/ingest";
 import { plannerChannels as pc, type PlanDraft, type PlannerUpdate } from "@shared/ipc/planner";
 import { voiceChannels, type Voice } from "@shared/ipc/voice";
 import { computeTimeline, formatTime } from "@shared/plan/timing";
-import { LANGUAGES, Outline, TARGET_MINUTES, TONES, type Estimate, type OutlineChapter, type PlanSettings, type PlanStep, type QualityReport, type Tone } from "@shared/planner";
+import { LANGUAGES, languageLabel, lengthLabel, Outline, TARGET_MINUTES, VIDEO_FORMATS, type VideoFormat, TONES, type Estimate, type OutlineChapter, type PlanSettings, type PlanStep, type QualityReport, type Tone } from "@shared/planner";
 import { Button } from "@renderer/components/ui/button";
 import { confirm } from "@renderer/components/ui/confirm";
 import { Badge, Card, CardContent, CardDescription, CardHeader, CardTitle, Input, Label, Textarea, Tooltip } from "@renderer/components/ui/primitives";
@@ -38,6 +38,8 @@ import { usd } from "@renderer/lib/format";
 import { call, errorText } from "@renderer/lib/ipc";
 import { cn } from "@renderer/lib/utils";
 import { usePlanner } from "@renderer/stores/planner";
+import { findPhotosNow, PicturesPanel, useDraftPictures } from "@renderer/components/pictures/pictures-card";
+import { Switch } from "@renderer/components/ui/switch";
 
 /* ---------- helpers ---------- */
 
@@ -69,7 +71,7 @@ const BILLING: Record<Estimate["billing"], { label: string; tone: "success" | "p
 };
 
 /** Asks before a run that may cost money. Free and subscription runs start at once. */
-async function confirmCost(e: Estimate, what: string): Promise<boolean | null> {
+export async function confirmCost(e: Estimate, what: string): Promise<boolean | null> {
 	if (!e.needsConfirm) return false;
 	const ok = await confirm({
 		title: e.costUsd ? `Start a paid run (${costText(e)})?` : "Start a run with an unknown price?",
@@ -130,8 +132,23 @@ function SettingsCard({ settings, onChange, disabled }: { settings: PlanSettings
 			.catch(() => setVoices([]));
 	}, []);
 	const set = <K extends keyof PlanSettings>(k: K, v: PlanSettings[K]) => onChange({ ...settings, [k]: v });
+	// Voices that speak the video's language. None (German, Arabic, Chinese): the English voices read it.
+	const speaking = voices.filter((v) => v.language === settings.language);
+	const offered = speaking.length ? speaking : voices.filter((v) => v.language === "en");
+	const current = voices.find((v) => v.id === settings.voice);
+	// A new language picks a voice that speaks it, so an Urdu video is not read by an English voice.
+	useEffect(() => {
+		if (disabled || !speaking.length || (current && current.language === settings.language)) return;
+		const pick = speaking.find((v) => v.recommended) ?? speaking[0]!;
+		onChange({ ...settings, voice: pick.id });
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [voices, settings.language]);
 	const voiceOptions = voices.length
-		? voices.map((v) => ({ value: v.id, label: `${v.name} · ${v.accent}`, hint: v.recommended ? "Recommended" : undefined }))
+		? offered.map((v) => ({
+				value: v.id,
+				label: `${v.name} · ${v.accent} ${v.gender}`,
+				hint: v.downloadBytes ? `Downloads ${Math.round(v.downloadBytes / 1_000_000)} MB once` : v.recommended ? "Recommended" : undefined,
+			}))
 		: settings.voice
 			? [{ value: settings.voice, label: settings.voice }]
 			: [];
@@ -145,6 +162,16 @@ function SettingsCard({ settings, onChange, disabled }: { settings: PlanSettings
 				<Field label="Audience">
 					<Select<Level> ariaLabel="Audience level" value={settings.level} onChange={(v) => set("level", v)} options={LEVELS.map((l) => ({ value: l, label: l }))} disabled={disabled} />
 				</Field>
+				<Field label="Format">
+					<Select<VideoFormat>
+						ariaLabel="Video format"
+						value={settings.format}
+						// Shorts are short: switching to vertical suggests 1 minute when the length is open or long.
+						onChange={(v) => onChange({ ...settings, format: v, targetMinutes: v === "vertical" && (!settings.targetMinutes || settings.targetMinutes > 3) ? 1 : settings.targetMinutes })}
+						options={(Object.keys(VIDEO_FORMATS) as VideoFormat[]).map((f) => ({ value: f, label: VIDEO_FORMATS[f].label, hint: VIDEO_FORMATS[f].hint }))}
+						disabled={disabled}
+					/>
+				</Field>
 				<div className="grid grid-cols-2 gap-3">
 					<Field label="Language">
 						<Select ariaLabel="Language" value={settings.language} onChange={(v) => set("language", v)} options={LANGUAGES.map((l) => ({ value: l.code, label: l.label }))} disabled={disabled} />
@@ -153,13 +180,15 @@ function SettingsCard({ settings, onChange, disabled }: { settings: PlanSettings
 						<Select<Tone> ariaLabel="Tone" value={settings.tone} onChange={(v) => set("tone", v)} options={TONES.map((t) => ({ value: t, label: t }))} disabled={disabled} />
 					</Field>
 				</div>
-				{settings.language !== "en" ? <p className="text-[12px] text-warning">The voice reads English only for now. The script and captions use this language.</p> : null}
+				{voices.length && !speaking.length ? (
+					<p className="text-[12px] text-warning">No voice speaks {languageLabel(settings.language)} yet. An English voice reads it. The script and captions use this language.</p>
+				) : null}
 				<Field label="Length">
 					<Select
 						ariaLabel="Target length"
 						value={settings.targetMinutes ? String(settings.targetMinutes) : "auto"}
 						onChange={(v) => set("targetMinutes", v === "auto" ? null : Number(v))}
-						options={[{ value: "auto", label: "As long as needed", hint: "Default" }, ...TARGET_MINUTES.map((m) => ({ value: String(m), label: `About ${m} minutes` }))]}
+						options={[{ value: "auto", label: "As long as needed", hint: "Default" }, ...TARGET_MINUTES.map((m) => ({ value: String(m), label: `About ${lengthLabel(m)}` }))]}
 						disabled={disabled}
 					/>
 				</Field>
@@ -173,6 +202,13 @@ function SettingsCard({ settings, onChange, disabled }: { settings: PlanSettings
 						disabled={disabled || !voiceOptions.length}
 					/>
 				</Field>
+				<div className="flex items-start justify-between gap-3">
+					<div>
+						<p className="text-[13px] font-medium">Find free photos on the web</p>
+						<p className="text-[12px] text-muted-foreground">Real people, places and things only. Licenses that allow YouTube; credits are added for you.</p>
+					</div>
+					<Switch ariaLabel="Find free photos on the web" checked={settings.webPictures} disabled={disabled} onChange={(v) => set("webPictures", v)} />
+				</div>
 				<Field label="Visual style">
 					<Select<PlanSettings["style"]>
 						ariaLabel="Visual style"
@@ -223,13 +259,13 @@ function useEstimate(draftId: string, step: PlanStep | null, settings: PlanSetti
 	return est;
 }
 
-function EstimateCard({ step, est }: { step: PlanStep; est: ReturnType<typeof useEstimate> }) {
+export function EstimateCard({ step, est }: { step: PlanStep; est: { value: Estimate | null; error: string | null; loading: boolean } }) {
 	const e = est.value;
 	return (
 		<Card>
 			<CardHeader>
 				<CardTitle>Before you run</CardTitle>
-				<CardDescription>{step === "outline" ? "Writing the outline" : "Writing the script, then checking facts, level and pacing"}</CardDescription>
+				<CardDescription>{step === "outline" ? "Writing the outline" : step === "research" ? "Planning and writing the material" : step === "pictures" ? "Choosing photos, then checking each one" : "Finding photos (when on), writing the script, then checking facts, level and pacing"}</CardDescription>
 			</CardHeader>
 			<CardContent>
 				{est.error ? (
@@ -312,7 +348,7 @@ function RunningCard({ update, outline, estimate }: { update: PlannerUpdate; out
 			<CardHeader>
 				<div className="flex items-center gap-2">
 					<Loader2 className="size-4 animate-spin text-primary" />
-					<CardTitle>{update.step === "outline" ? "Writing the outline" : update.step === "script" ? "Writing the script and scenes" : update.step === "scene" ? "Rewriting one scene" : "Rewriting one chapter"}</CardTitle>
+					<CardTitle>{update.step === "outline" ? "Writing the outline" : update.step === "script" ? "Writing the script and scenes" : update.step === "pictures" ? "Finding photos" : update.step === "scene" ? "Rewriting one scene" : "Rewriting one chapter"}</CardTitle>
 				</div>
 				<CardDescription>
 					{update.detail} · {seconds((now - t0) / 1000)} so far{estimate ? ` · usually ${seconds(estimate.seconds.low)} – ${seconds(estimate.seconds.high)}` : ""}
@@ -402,7 +438,7 @@ function OutlineEditor({ outline, onChange, level, disabled }: { outline: Outlin
 			<div className="flex items-center justify-between px-1">
 				<h2 className="text-[15px] font-semibold tracking-tight">Chapters</h2>
 				<span className="text-[12px] tabular-nums text-muted-foreground">
-					{outline.chapters.length} chapters · about {Math.round(total)} min
+					{outline.chapters.length} chapters · about {lengthLabel(total)}
 				</span>
 			</div>
 			<ol className="space-y-3">
@@ -424,12 +460,12 @@ function OutlineEditor({ outline, onChange, level, disabled }: { outline: Outlin
 									<Input
 										aria-label={`Chapter ${i + 1} minutes`}
 										type="number"
-										min={0.5}
+										min={0.25}
 										max={60}
-										step={0.5}
+										step={0.25}
 										value={c.minutes}
 										disabled={disabled}
-										onChange={(e) => setChapter(i, { minutes: Math.min(60, Math.max(0.5, Number(e.target.value) || 0.5)) })}
+										onChange={(e) => setChapter(i, { minutes: Math.min(60, Math.max(0.25, Number(e.target.value) || 0.25)) })}
 										className="h-8 w-[4.5rem] text-right tabular-nums"
 									/>
 									<span className="mr-1 text-[12px] text-muted-foreground">min</span>
@@ -604,7 +640,7 @@ function PlanResult({ draft, onRewrite, onEditOutline }: { draft: PlanDraft; onR
 				</dl>
 				<p className="text-[12px] text-muted-foreground">
 					Scene types: {[...types].join(", ")}. Length is estimated until the voice is made.
-					{draft.report?.targetMinutes ? ` Target was about ${draft.report.targetMinutes} min.` : ""}
+					{draft.report?.targetMinutes ? ` Target was about ${lengthLabel(draft.report.targetMinutes)}.` : ""}
 				</p>
 				{draft.report ? <QualityPanel report={draft.report} /> : null}
 				<div className="flex flex-wrap gap-2">
@@ -626,10 +662,29 @@ function PlanResult({ draft, onRewrite, onEditOutline }: { draft: PlanDraft; onR
 	);
 }
 
+/* ---------- pictures ---------- */
+
+function PicturesCard({ draftId, settings, canFind, disabled }: { draftId: string; settings: PlanSettings; canFind: boolean; disabled: boolean }) {
+	const { state, setState } = useDraftPictures(draftId);
+	return (
+		<Card>
+			<CardHeader>
+				<CardTitle>Pictures</CardTitle>
+				<CardDescription>Your own photos go in the video. Free web photos are found before the script{settings.webPictures ? "" : " (turned off above)"}.</CardDescription>
+			</CardHeader>
+			<CardContent>
+				<PicturesPanel draftId={draftId} state={state} setState={setState} disabled={disabled} find={canFind ? () => findPhotosNow(draftId, settings, confirmCost) : undefined} />
+			</CardContent>
+		</Card>
+	);
+}
+
 /* ---------- page ---------- */
 
 function defaultSettings(d: PlanDraft, voice: string | undefined): PlanSettings {
-	return d.settings ?? { level: isLevel(d.level) ? d.level : "High school", language: "en", tone: "Friendly", targetMinutes: null, voice, style: "auto" };
+	// A draft made from a topic starts with its settings but no voice; use the default voice then.
+	if (d.settings) return d.settings.voice ? d.settings : { ...d.settings, voice };
+	return { format: "landscape", level: isLevel(d.level) ? d.level : "High school", language: "en", tone: "Friendly", targetMinutes: null, voice, style: "auto", webPictures: true };
 }
 
 export function PlanWizard({ draftId }: { draftId: string }) {
@@ -812,6 +867,7 @@ export function PlanWizard({ draftId }: { draftId: string }) {
 				</div>
 				<div className="space-y-5">
 					<SettingsCard settings={settings} onChange={setSettings} disabled={!!running} />
+					<PicturesCard draftId={draftId} settings={settings} canFind={!!outline && !running} disabled={!!running} />
 					{nextStep || running ? <EstimateCard step={nextStep ?? running!.step} est={est} /> : null}
 				</div>
 			</div>

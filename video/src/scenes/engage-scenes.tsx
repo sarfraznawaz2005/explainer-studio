@@ -1,7 +1,7 @@
 import { useCurrentFrame, useVideoConfig } from "remotion";
 import type { PropsOf } from "../../../src/shared/plan/schema";
 import { outline, texture } from "../styles/styles";
-import { appearStyle, borders, Heading, Pill, ramp, SceneFrame, Surface, useAppear, useRevealFrames, useScene, useStyle } from "./kit";
+import { appearStyle, borders, Heading, Pill, ramp, SceneFrame, Surface, useAppear, useLayout, useRevealFrames, useScene, useStyle } from "./kit";
 
 /* Pause-and-think question and recap quiz. Both have silent thinking time (TimedScene.gaps). */
 
@@ -38,6 +38,8 @@ export function PauseScene({ question, answer, hint }: PropsOf<"pause">) {
 	const hintP = useAppear(hint ? gap.from + Math.round(gap.duration / 2) : null, { damping: 200 });
 	const a = useAppear(answerAt, { damping: 15 });
 	const thinking = frame >= gap.from && frame < answerAt;
+	// Tall frames: a taller answer area, and the hint under the countdown.
+	const { vertical } = useLayout();
 	return (
 		<SceneFrame center>
 			<div style={{ ...texture(s), display: "flex", flexDirection: "column", alignItems: "center", gap: 36, textAlign: "center" }}>
@@ -47,12 +49,12 @@ export function PauseScene({ question, answer, hint }: PropsOf<"pause">) {
 					</Pill>
 				</div>
 				<div style={{ ...appearStyle(q, 20), fontFamily: s.headingFont, fontSize: question.length > 110 ? 58 : 72, fontWeight: s.headingWeight, lineHeight: 1.2, maxWidth: 1500, transform: `translateY(${-a * 10}px)` }}>{question}</div>
-				<div style={{ height: 230, display: "flex", alignItems: "center", justifyContent: "center", position: "relative", width: 1500 }}>
+				<div style={{ height: vertical ? 460 : 230, display: "flex", alignItems: "center", justifyContent: "center", position: "relative", width: "100%" }}>
 					{thinking ? (
-						<div style={{ display: "flex", alignItems: "center", gap: 50 }}>
+						<div style={{ display: "flex", flexDirection: vertical ? "column" : "row", alignItems: "center", gap: vertical ? 30 : 50 }}>
 							<Countdown from={gap.from} duration={gap.duration} />
 							{hint ? (
-								<div style={{ ...appearStyle(hintP, 10), maxWidth: 800, textAlign: "left", fontSize: 36, color: s.muted, lineHeight: 1.35 }}>
+								<div style={{ ...appearStyle(hintP, 10), maxWidth: 800, textAlign: vertical ? "center" : "left", fontSize: 36, color: s.muted, lineHeight: 1.35 }}>
 									<span style={{ color: s.accent3, fontWeight: 800 }}>Hint: </span>
 									{hint}
 								</div>
@@ -99,12 +101,14 @@ export function QuizScene({ heading, questions }: PropsOf<"quiz">) {
 			</SceneFrame>
 		);
 	const shown = ramp(frame, start, start + 10);
-	const long = q.options.some((o) => o.length > 32);
+	// Tall frames: one option per row, and the question under its number.
+	const { vertical } = useLayout();
+	const long = vertical || q.options.some((o) => o.length > 32);
 	const barT = gap ? ramp(frame, gap.from, gap.from + gap.duration) : 0;
 	return (
 		<SceneFrame heading={heading ?? "Quick quiz"}>
 			<div style={{ ...texture(s), display: "flex", flexDirection: "column", gap: 30, opacity: shown, transform: `translateY(${(1 - shown) * 20}px)` }}>
-				<div style={{ display: "flex", alignItems: "baseline", gap: 24 }}>
+				<div style={{ display: "flex", flexDirection: vertical ? "column" : "row", alignItems: "baseline", gap: vertical ? 8 : 24 }}>
 					<span style={{ fontSize: 28, fontWeight: 800, color: s.accent, letterSpacing: 2, whiteSpace: "nowrap" }}>
 						Q{k + 1}
 						{questions.length > 1 ? ` / ${questions.length}` : ""}
@@ -125,7 +129,7 @@ export function QuizScene({ heading, questions }: PropsOf<"quiz">) {
 									display: "flex",
 									alignItems: "center",
 									gap: 24,
-									padding: long ? "16px 26px" : "24px 30px",
+									padding: vertical ? "22px 28px" : long ? "16px 26px" : "24px 30px",
 									borderRadius: Math.min(20, s.radius),
 									background: revealed && right ? `${s.positive}${s.dark ? "30" : "1c"}` : s.surface,
 									...borders(revealed && right ? `${Math.max(4, s.line.width * 2)}px solid ${s.positive}` : outline(s, color)),
@@ -135,7 +139,7 @@ export function QuizScene({ heading, questions }: PropsOf<"quiz">) {
 								}}
 							>
 								<span style={{ width: 56, height: 56, flexShrink: 0, borderRadius: 99, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 28, background: revealed && right ? s.positive : "transparent", color: revealed && right ? s.onAccent : s.accent, ...borders(revealed && right ? "none" : `3px solid ${s.accent}`) }}>{revealed && right ? "✓" : LETTERS[i]}</span>
-								<span style={{ fontSize: long ? 34 : 40, lineHeight: 1.25 }}>{o}</span>
+								<span style={{ fontSize: vertical ? 38 : long ? 34 : 40, lineHeight: 1.25 }}>{o}</span>
 							</div>
 						);
 					})}

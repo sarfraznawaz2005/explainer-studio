@@ -1,7 +1,7 @@
 import { interpolate, useCurrentFrame } from "remotion";
 import type { PropsOf } from "../../../src/shared/plan/schema";
 import { texture } from "../styles/styles";
-import { ACCENTS, appearStyle, SceneFrame, Surface, useAppear, useRevealAt, useStyle } from "./kit";
+import { ACCENTS, appearStyle, SceneFrame, Surface, useAppear, useLayout, useRevealAt, useStyle } from "./kit";
 
 function Arrow({ at, vertical }: { at: number; vertical: boolean }) {
 	const s = useStyle();
@@ -22,15 +22,18 @@ function Step({ index, label, detail, vertical, count }: { index: number; label:
 	const p = useAppear(at);
 	const color = ACCENTS(s)[index % 4]!;
 	const compact = !vertical && count > 4;
+	// Tall frames: each card is full width, so it stacks its parts (step, label, detail) like a wide-frame card.
+	const tall = useLayout().vertical;
+	const inline = vertical && !tall;
 	return (
 		<>
 			{index > 0 ? <Arrow at={at} vertical={vertical} /> : null}
 			<div style={{ ...appearStyle(p, 30), flex: vertical ? undefined : 1, minWidth: 0, display: "flex" }}>
-				<Surface edge={{ side: vertical ? "left" : "top", color }} style={{ flex: 1, padding: compact ? "30px 26px" : "36px 40px" }}>
-					<div style={{ display: "flex", flexDirection: vertical ? "row" : "column", gap: vertical ? 30 : 16, alignItems: vertical ? "center" : "flex-start" }}>
+				<Surface edge={{ side: vertical ? "left" : "top", color }} style={{ flex: 1, padding: compact ? "30px 26px" : tall && count > 4 ? "24px 34px" : "36px 40px" }}>
+					<div style={{ display: "flex", flexDirection: inline ? "row" : "column", gap: inline ? 30 : tall ? 8 : 16, alignItems: inline ? "center" : "flex-start" }}>
 						<div style={{ fontSize: 28, fontWeight: 700, color, letterSpacing: 2 }}>STEP {index + 1}</div>
-						<div style={{ fontSize: compact ? 38 : 46, fontWeight: 700, lineHeight: 1.15 }}>{label}</div>
-						{detail ? <div style={{ fontSize: compact ? 27 : 32, color: s.muted, lineHeight: 1.35 }}>{detail}</div> : null}
+						<div style={{ fontSize: compact ? 38 : tall ? (count > 4 ? 42 : 50) : 46, fontWeight: 700, lineHeight: 1.15 }}>{label}</div>
+						{detail ? <div style={{ fontSize: compact ? 27 : tall ? 36 : 32, color: s.muted, lineHeight: 1.35 }}>{detail}</div> : null}
 					</div>
 				</Surface>
 			</div>
@@ -40,7 +43,9 @@ function Step({ index, label, detail, vertical, count }: { index: number; label:
 
 export function FlowScene({ heading, steps, direction }: PropsOf<"flow">) {
 	const s = useStyle();
-	const vertical = direction === "vertical";
+	// Steps go top to bottom when asked, and always in a tall frame (side by side they would be too narrow).
+	const tall = useLayout().vertical;
+	const vertical = direction === "vertical" || tall;
 	return (
 		<SceneFrame heading={heading} center={!heading}>
 			<div
@@ -49,7 +54,7 @@ export function FlowScene({ heading, steps, direction }: PropsOf<"flow">) {
 					display: "flex",
 					flexDirection: vertical ? "column" : "row",
 					alignItems: "stretch",
-					gap: vertical ? 10 : 18,
+					gap: tall ? 4 : vertical ? 10 : 18,
 					margin: "auto 0",
 				}}
 			>
@@ -94,10 +99,12 @@ export function CompareScene({ heading, left, right, verdict }: PropsOf<"compare
 	const rightAt = useRevealAt(1);
 	const vs = useAppear(rightAt - 6, { damping: 12 });
 	const verdictP = useAppear(verdict ? rightAt + 30 : null);
+	// Tall frames stack the two sides, with VS between them.
+	const { vertical } = useLayout();
 	return (
 		<SceneFrame heading={heading}>
-			<div style={{ ...texture(s), display: "flex", flexDirection: "column", gap: 36, flex: 1, minHeight: 0 }}>
-				<div style={{ display: "flex", gap: 40, alignItems: "stretch", position: "relative" }}>
+			<div style={{ ...texture(s), display: "flex", flexDirection: "column", gap: 36, flex: vertical ? undefined : 1, minHeight: 0 }}>
+				<div style={{ display: "flex", flexDirection: vertical ? "column" : "row", gap: vertical ? 56 : 40, alignItems: "stretch", position: "relative" }}>
 					<Column side={0} title={left.title} points={left.points} color={s.accent} />
 					<div
 						style={{

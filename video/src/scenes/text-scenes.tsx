@@ -1,7 +1,7 @@
 import { AbsoluteFill, interpolate, useCurrentFrame } from "remotion";
 import type { PropsOf } from "../../../src/shared/plan/schema";
 import { texture } from "../styles/styles";
-import { ACCENTS, appearStyle, SceneFrame, Surface, Underline, useAppear, useRevealAt, useScene, useStyle } from "./kit";
+import { ACCENTS, appearStyle, SceneFrame, Surface, Underline, useAppear, useLayout, useRevealAt, useScene, useStyle } from "./kit";
 
 export function TitleScene({ title, subtitle, kicker }: PropsOf<"title">) {
 	const s = useStyle();
@@ -45,9 +45,10 @@ export function ChapterScene({ number, title, goal }: PropsOf<"chapter">) {
 	const t = useAppear(8, { damping: 200 });
 	const g = useAppear(20, { damping: 200 });
 	const bar = interpolate(frame, [6, 30], [0, 1], { extrapolateLeft: "clamp", extrapolateRight: "clamp" });
+	const { vertical } = useLayout();
 	return (
 		<SceneFrame center>
-			<div style={{ ...texture(s), display: "flex", alignItems: "center", gap: 80 }}>
+			<div style={{ ...texture(s), display: "flex", flexDirection: vertical ? "column" : "row", alignItems: vertical ? "flex-start" : "center", gap: vertical ? 48 : 80 }}>
 				<div
 					style={{
 						fontFamily: s.headingFont,
@@ -62,7 +63,7 @@ export function ChapterScene({ number, title, goal }: PropsOf<"chapter">) {
 				>
 					{String(number).padStart(2, "0")}
 				</div>
-				<div style={{ width: 8, height: 280 * bar, background: s.accent2, borderRadius: 8 }} />
+				<div style={vertical ? { height: 8, width: 280 * bar, background: s.accent2, borderRadius: 8 } : { width: 8, height: 280 * bar, background: s.accent2, borderRadius: 8 }} />
 				<div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
 					<div style={{ ...appearStyle(t, 0), fontSize: 30, letterSpacing: 4, textTransform: "uppercase", color: s.muted, transform: `translateX(${(1 - t) * 30}px)` }}>
 						Chapter {number}
@@ -126,11 +127,12 @@ export function DefinitionScene({ term, partOfSpeech, definition, example }: Pro
 	const defP = useAppear(timed.sentences[0] ? timed.sentences[0].from + 6 : 20, { damping: 200 });
 	const exAt = timed.sentences.at(-1)?.from ?? 40;
 	const exP = useAppear(example ? exAt : null, { damping: 200 });
+	const { vertical } = useLayout();
 	return (
 		<SceneFrame center>
 			<div style={{ ...texture(s), display: "flex", flexDirection: "column", gap: 44, maxWidth: 1450 }}>
-				<div style={{ ...appearStyle(termP, 20), display: "flex", alignItems: "baseline", gap: 30 }}>
-					<div style={{ fontFamily: s.headingFont, fontSize: 120, fontWeight: 800, letterSpacing: s.hand ? 0 : -4, color: s.accent }}>{term}</div>
+				<div style={{ ...appearStyle(termP, 20), display: "flex", alignItems: "baseline", flexWrap: "wrap", columnGap: 30, rowGap: 8 }}>
+					<div style={{ fontFamily: s.headingFont, fontSize: vertical ? 96 : 120, overflowWrap: "anywhere", fontWeight: 800, letterSpacing: s.hand ? 0 : -4, color: s.accent }}>{term}</div>
 					{partOfSpeech ? <div style={{ fontSize: 40, fontStyle: "italic", color: s.muted }}>{partOfSpeech}</div> : null}
 				</div>
 				<div style={appearStyle(defP, 24)}>
@@ -139,7 +141,7 @@ export function DefinitionScene({ term, partOfSpeech, definition, example }: Pro
 					</Surface>
 				</div>
 				{example ? (
-					<div style={{ ...appearStyle(exP, 20), display: "flex", gap: 24, alignItems: "baseline", fontSize: 42, color: s.muted }}>
+					<div style={{ ...appearStyle(exP, 20), display: "flex", flexDirection: vertical ? "column" : "row", gap: vertical ? 10 : 24, alignItems: "baseline", fontSize: 42, color: s.muted }}>
 						<span style={{ color: s.accent2, fontWeight: 700, textTransform: "uppercase", letterSpacing: 3, fontSize: 30 }}>Example</span>
 						<span style={{ lineHeight: 1.4 }}>{example}</span>
 					</div>

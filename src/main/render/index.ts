@@ -10,6 +10,7 @@ import { computeTimeline } from "@shared/plan/timing";
 import { buildSrt, buildYoutubePack, DEFAULT_RENDER, RenderSettings, youtubeText, type Credit } from "@shared/render";
 import { appFolders } from "../app/folders";
 import { audioBaseFor, figureBaseFor } from "../app/media-url";
+import { pictureCredits } from "../pictures/library";
 import { kitForDraft, stampForDraft } from "../brand";
 import { writeLog } from "../app/logger";
 import { getMainWindow } from "../app/window";
@@ -96,13 +97,16 @@ function snapshot(draftId: string, fps: 30 | 60, withBrand = true) {
 			const needs = v.ok && LICENSES[v.code].credit;
 			return { title: a.title, author: a.author, license: a.license, sourceUrl: a.sourceUrl, line: needs ? (a.attribution ?? attributionFor(a)) : null };
 		});
+	// Photos found on the web that the video shows.
+	const photos = pictureCredits(d);
+	credits.push(...photos.lines);
 	const outline = Outline.safeParse(d.outline);
 	const extra = outline.success ? { subtitle: outline.data.subtitle, subject: outline.data.subject, hook: outline.data.hook } : {};
 	const series = d.seriesId && d.episode ? repos.series.get(d.seriesId) : null;
 	const episode = series && d.episode ? { title: series.title, episode: d.episode } : null;
 	const pack = buildYoutubePack(plan, timeline, credits, { ...extra, series: episode, channel: plan.meta.brand?.channel });
 	const counts = narrationCounts(parsed.data, voiceSetupOf(d), voiceDir(d.id));
-	return { d, plan, timeline, soundtrack, pack, counts, stamp, episode };
+	return { d, plan, timeline, soundtrack, pack, counts, stamp, episode, figureMeta: photos.meta };
 }
 
 export function renderCheck(draftId: string): RenderCheck {
@@ -128,7 +132,7 @@ export function renderCheck(draftId: string): RenderCheck {
 export async function queueDraft(draftId: string, settings: RenderSettings, remember: boolean): Promise<string> {
 	const s = snapshot(draftId, settings.fps, settings.brand);
 	if (remember) setRenderDefaults(settings);
-	const props = { plan: s.plan, audioBase: audioBaseFor(s.d.id), soundtrack: s.soundtrack, figureBase: figureBaseFor(s.d.id) };
+	const props = { plan: s.plan, audioBase: audioBaseFor(s.d.id), soundtrack: s.soundtrack, figureBase: figureBaseFor(s.d.id), figureMeta: s.figureMeta };
 	const id = await renderQueue.add({
 		draftId,
 		title: s.plan.meta.title,

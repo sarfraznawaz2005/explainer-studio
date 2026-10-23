@@ -4,7 +4,7 @@ import { parseMath } from "../../../src/shared/plan/math-expr";
 import type { PropsOf } from "../../../src/shared/plan/schema";
 import { texHtml } from "../../../src/shared/plan/tex";
 import { texture, type VisualStyle } from "../styles/styles";
-import { accentAt, appearStyle, CONTENT_W, ease, ramp, SceneFrame, stageHeight, Surface, useAppear, useRevealFrames, useScene, useStyle } from "./kit";
+import { accentAt, appearStyle, ease, ramp, SceneFrame, Surface, useAppear, useLayout, useRevealFrames, useScene, useStyle } from "./kit";
 
 /* Pie chart, number counter, equation derivation (KaTeX) and graph plot. */
 
@@ -29,9 +29,13 @@ export function PieChart({ data, unit, highlight: hi, height }: { data: { label:
 	const frames = useRevealFrames(data.length);
 	const colors = pieColors(s);
 	const total = data.reduce((n, d) => n + Math.max(0, d.value), 0) || 1;
-	const R = Math.min(height / 2 - 20, 320);
-	const cx = R + 40;
-	const cy = height / 2;
+	const { vertical, contentW } = useLayout();
+	// Tall frames: the donut on top, the legend under it.
+	const legendH = vertical ? data.length * (data.length > 7 ? 54 : 70) + 40 : 0;
+	const pieH = vertical ? Math.min(contentW, height - legendH) : height;
+	const R = Math.min(pieH / 2 - 20, vertical ? 400 : 320);
+	const cx = vertical ? contentW / 2 : R + 40;
+	const cy = pieH / 2;
 	let acc = 0;
 	const slices = data.map((d, i) => {
 		const a0 = (acc / total) * Math.PI * 2;
@@ -43,8 +47,8 @@ export function PieChart({ data, unit, highlight: hi, height }: { data: { label:
 	const hiOut = hi !== undefined && frames[hi] !== undefined ? ease(ramp(frame, frames[hi]! + 18, frames[hi]! + 30)) : 0;
 	const centre = hi !== undefined && data[hi] ? `${Math.round((Math.max(0, data[hi]!.value) / total) * 100)}%` : `${fmt(total)}${unit ? ` ${unit}` : ""}`;
 	return (
-		<div style={{ position: "relative", width: CONTENT_W, height, display: "flex", alignItems: "center" }}>
-			<svg width={cx * 2} height={height} style={{ flexShrink: 0, overflow: "visible" }}>
+		<div style={{ position: "relative", width: contentW, height: vertical ? undefined : height, display: "flex", flexDirection: vertical ? "column" : "row", alignItems: vertical ? "stretch" : "center", gap: vertical ? 40 : 0 }}>
+			<svg width={cx * 2} height={pieH} style={{ flexShrink: 0, overflow: "visible" }}>
 				{slices.map((sl) => {
 					if (!sl.on) return null;
 					const mid = (sl.a0 + sl.full) / 2;
@@ -65,7 +69,7 @@ export function PieChart({ data, unit, highlight: hi, height }: { data: { label:
 					{centre}
 				</text>
 			</svg>
-			<div style={{ marginLeft: 70, display: "flex", flexDirection: "column", gap: data.length > 7 ? 12 : 20, flex: 1, minWidth: 0 }}>
+			<div style={{ marginLeft: vertical ? 0 : 70, display: "flex", flexDirection: "column", gap: data.length > 7 ? 12 : 20, flex: vertical ? undefined : 1, minWidth: 0 }}>
 				{data.map((d, i) => (
 					<PieRow key={i} at={frames[i]!} color={colors[i % colors.length]!} label={d.label} value={d.value} pct={(Math.max(0, d.value) / total) * 100} unit={unit} hot={i === hi} compact={data.length > 7} />
 				))}
@@ -97,16 +101,19 @@ function Counter({ index, at, value, from, label, prefix, unit, decimals, count 
 	const t = 1 - Math.pow(1 - ramp(frame, at + 4, at + 46), 3);
 	const v = from + (value - from) * t;
 	const color = accentAt(s, index);
-	const size = count === 1 ? 190 : count === 2 ? 150 : count === 3 ? 116 : 94;
+	const { vertical } = useLayout();
+	// Tall frames stack the counters, so each keeps the full width.
+	const size = vertical ? (count === 1 ? 170 : count === 2 ? 140 : count === 3 ? 110 : 90) : count === 1 ? 190 : count === 2 ? 150 : count === 3 ? 116 : 94;
+	const roomy = vertical || count <= 2;
 	return (
 		<div style={{ ...appearStyle(p, 30), flex: 1, minWidth: 0 }}>
-			<Surface edge={{ side: "top", color }} style={{ padding: count > 2 ? "46px 30px" : "56px 50px", textAlign: "center" }}>
+			<Surface edge={{ side: "top", color }} style={{ padding: vertical && count > 2 ? "30px 40px" : roomy ? "56px 50px" : "46px 30px", textAlign: "center" }}>
 				<div style={{ fontFamily: s.headingFont, fontWeight: 800, fontSize: size, lineHeight: 1, color, fontVariantNumeric: "tabular-nums", letterSpacing: s.hand ? 0 : -size * 0.03, whiteSpace: "nowrap" }}>
 					{prefix ?? ""}
 					{fmt(v, decimals)}
 					{unit ? <span style={{ fontSize: "0.42em", marginLeft: 10, color: s.muted, letterSpacing: 0 }}>{unit}</span> : null}
 				</div>
-				<div style={{ marginTop: 28, fontSize: count > 2 ? 32 : 40, lineHeight: 1.3, color: s.text }}>{label}</div>
+				<div style={{ marginTop: vertical && count > 2 ? 16 : 28, fontSize: roomy ? 40 : 32, lineHeight: 1.3, color: s.text }}>{label}</div>
 			</Surface>
 		</div>
 	);
@@ -115,9 +122,10 @@ function Counter({ index, at, value, from, label, prefix, unit, decimals, count 
 export function CounterScene({ heading, counters }: PropsOf<"counter">) {
 	const s = useStyle();
 	const frames = useRevealFrames(counters.length);
+	const { vertical } = useLayout();
 	return (
 		<SceneFrame heading={heading} center={!heading}>
-			<div style={{ ...texture(s), display: "flex", gap: counters.length > 2 ? 30 : 50, alignItems: "stretch", margin: "auto 0" }}>
+			<div style={{ ...texture(s), display: "flex", flexDirection: vertical ? "column" : "row", gap: counters.length > 2 ? 30 : 50, alignItems: "stretch", margin: "auto 0" }}>
 				{counters.map((c, i) => (
 					<Counter key={i} index={i} at={frames[i]!} count={counters.length} {...c} />
 				))}
@@ -126,11 +134,23 @@ export function CounterScene({ heading, counters }: PropsOf<"counter">) {
 	);
 }
 
-function EquationLine({ tex, note, at, current, size }: { tex: string; note?: string; at: number; current: boolean; size: number }) {
+function EquationLine({ tex, note, at, current, size, stacked }: { tex: string; note?: string; at: number; current: boolean; size: number; stacked: boolean }) {
 	const s = useStyle();
 	const p = useAppear(at, { damping: 200 });
 	const html = texHtml(tex);
 	const cell = { ...appearStyle(p, 22), opacity: p * (current ? 1 : 0.5) };
+	if (stacked)
+		// Tall frames: the note goes under its formula.
+		return (
+			<div style={{ ...cell, display: "flex", gap: 30 }}>
+				<div style={{ width: 8, flexShrink: 0, borderRadius: 8, background: current ? s.accent : "transparent" }} />
+				<div style={{ minWidth: 0, display: "flex", flexDirection: "column", gap: 8 }}>
+					{/* KaTeX output: made by KaTeX from a checked formula with trust off, never from raw plan text. */}
+					<div className="es-tex" style={{ fontSize: size, color: s.text }} dangerouslySetInnerHTML={{ __html: html }} />
+					{note ? <div style={{ fontSize: Math.max(32, size * 0.62), color: current ? s.accent : s.muted, lineHeight: 1.3, fontFamily: s.bodyFont }}>{note}</div> : null}
+				</div>
+			</div>
+		);
 	return (
 		<>
 			<div style={{ ...cell, width: 8, alignSelf: "stretch", borderRadius: 8, background: current ? s.accent : "transparent" }} />
@@ -150,15 +170,25 @@ export function EquationScene({ heading, steps }: PropsOf<"equation">) {
 	const longest = Math.max(...steps.map((st) => st.tex.length));
 	// Long formulas next to notes get a smaller size so both fit on the line.
 	const base = steps.length > 5 ? 40 : steps.length > 3 ? 48 : 58;
-	const size = notes && longest > 50 ? Math.round(base * 0.82) : base;
+	const { vertical, contentW } = useLayout();
+	// Tall frames: a formula has the full width but it is narrow, so long ones get smaller (about 0.2em per TeX source character; commands draw little).
+	const size = vertical ? Math.max(34, Math.min(Math.round(base * 1.3), Math.floor((contentW - 40) / (0.2 * longest)))) : notes && longest > 50 ? Math.round(base * 0.82) : base;
 	return (
 		<SceneFrame heading={heading} center={!heading}>
 			<style>{".es-tex .katex-display{margin:0;text-align:left}.es-tex .katex-display>.katex{text-align:left}"}</style>
-			<div style={{ ...texture(s), display: "grid", gridTemplateColumns: notes ? "8px max-content minmax(260px, 1fr)" : "8px max-content 0", columnGap: 40, rowGap: steps.length > 5 ? 10 : 22, alignItems: "center", margin: "auto 0" }}>
-				{steps.map((st, i) => (
-					<EquationLine key={i} tex={st.tex} note={st.note} at={frames[i]!} current={i === current} size={size} />
-				))}
-			</div>
+			{vertical ? (
+				<div style={{ ...texture(s), display: "flex", flexDirection: "column", gap: steps.length > 4 ? 28 : 44, margin: "auto 0" }}>
+					{steps.map((st, i) => (
+						<EquationLine key={i} tex={st.tex} note={st.note} at={frames[i]!} current={i === current} size={size} stacked />
+					))}
+				</div>
+			) : (
+				<div style={{ ...texture(s), display: "grid", gridTemplateColumns: notes ? "8px max-content minmax(260px, 1fr)" : "8px max-content 0", columnGap: 40, rowGap: steps.length > 5 ? 10 : 22, alignItems: "center", margin: "auto 0" }}>
+					{steps.map((st, i) => (
+						<EquationLine key={i} tex={st.tex} note={st.note} at={frames[i]!} current={i === current} size={size} stacked={false} />
+					))}
+				</div>
+			)}
 		</SceneFrame>
 	);
 }
@@ -202,8 +232,10 @@ export function GraphScene({ heading, functions, x, y, points, tracer, xLabel, y
 	});
 	const [x0, x1] = x;
 	const [y0, y1] = y ?? fitY(fns, x0, x1);
-	const W = CONTENT_W - 120;
-	const H = stageHeight(heading) - 80;
+	const { vertical, contentW, stageH } = useLayout();
+	const W = contentW - 120;
+	// Tall frames: a plot about as tall as it is wide, not the full height.
+	const H = vertical ? Math.min(stageH(heading) - 80, Math.round(W * 1.15)) : stageH(heading) - 80;
 	const L = 90;
 	const T = 20;
 	const sx = (v: number) => L + ((v - x0) / (x1 - x0)) * W;
@@ -246,7 +278,7 @@ export function GraphScene({ heading, functions, x, y, points, tracer, xLabel, y
 	return (
 		<SceneFrame heading={heading} center={!heading}>
 			<div style={{ ...texture(s), position: "relative" }}>
-				<svg width={CONTENT_W} height={H + 80} style={{ overflow: "visible", fontFamily: s.bodyFont }}>
+				<svg width={contentW} height={H + 80} style={{ overflow: "visible", fontFamily: s.bodyFont }}>
 					<clipPath id={`plot-${timed.scene.id}`}>
 						<rect x={L} y={T} width={W} height={H} />
 					</clipPath>

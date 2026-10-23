@@ -32,7 +32,7 @@ export const IngestProgress = z.object({
 	fileIndex: z.number(),
 	fileCount: z.number(),
 	fileName: z.string(),
-	stage: z.enum(["text", "pages", "ocr", "figures", "saving"]),
+	stage: z.enum(["text", "pages", "ocr", "figures", "saving", "research"]),
 	progress: z.number().min(0).max(1),
 	page: z.number().optional(),
 	pageIndex: z.number().optional(),

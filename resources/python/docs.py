@@ -10,6 +10,8 @@ prints JSON lines on stdout (progress and results). Library output goes to stder
   docs.py crop --jobs JOBS.json
       JOBS.json = [{"image","box":[x0,y0,x1,y1] (0..1000),"out"}] → {"type":"crop","out","width","height"}
   docs.py info --file F.pdf → {"type":"info","pages":n}
+  docs.py fit  --jobs JOBS.json
+      JOBS.json = [{"image","out" (no extension),"max"}] → {"type":"fit","image","out","width","height"} (upright, ≤ max px)
 
 Paths come from the app, never from the network. Outputs are written only under the
 given out folder / out paths.
@@ -187,6 +189,39 @@ def cmd_crop(args):
             send({"type": "crop", "out": job.get("out"), "error": f"{type(e).__name__}: {e}"})
 
 
+def cmd_fit(args):
+    """
+    Pictures for a video: turned upright (the camera's rotation tag is applied),
+    made no larger than `max` pixels on the long side, saved as JPEG (or PNG
+    when the picture has transparency). `out` has no extension; the reply says
+    which one was used.
+    """
+    from PIL import Image, ImageOps
+
+    with open(args.jobs, encoding="utf-8") as f:
+        jobs = json.load(f)
+    for job in jobs:
+        try:
+            src, out, side = job["image"], job["out"], int(job["max"])
+            if not 64 <= side <= 8192:
+                raise ValueError("max must be between 64 and 8192")
+            if os.path.splitext(out)[1]:
+                raise ValueError("out must have no extension")
+            with Image.open(src) as im:
+                im = ImageOps.exif_transpose(im)
+                alpha = im.mode in ("RGBA", "LA", "PA") or (im.mode == "P" and "transparency" in im.info)
+                im = im.convert("RGBA" if alpha else "RGB")
+                im.thumbnail((side, side), Image.LANCZOS)
+                path = out + (".png" if alpha else ".jpg")
+                if alpha:
+                    im.save(path, optimize=True)
+                else:
+                    im.save(path, quality=88, optimize=True, progressive=True)
+            send({"type": "fit", "image": src, "out": path, "width": im.width, "height": im.height})
+        except Exception as e:  # noqa: BLE001
+            send({"type": "fit", "image": job.get("image"), "error": f"{type(e).__name__}: {e}"})
+
+
 def main():
     ap = argparse.ArgumentParser()
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -202,9 +237,11 @@ def main():
     a.add_argument("--images", nargs="+", required=True)
     a = sub.add_parser("crop")
     a.add_argument("--jobs", required=True)
+    a = sub.add_parser("fit")
+    a.add_argument("--jobs", required=True)
     args = ap.parse_args()
     try:
-        {"info": cmd_info, "pdf": cmd_pdf, "ocr": cmd_ocr, "crop": cmd_crop}[args.cmd](args)
+        {"info": cmd_info, "pdf": cmd_pdf, "ocr": cmd_ocr, "crop": cmd_crop, "fit": cmd_fit}[args.cmd](args)
     except Exception as e:  # noqa: BLE001
         send({"type": "fatal", "error": f"{type(e).__name__}: {e}"})
         return 1

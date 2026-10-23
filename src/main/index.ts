@@ -13,6 +13,7 @@ import { registerPlannerIpc } from "./ipc/planner";
 import { cancelAllIngest } from "./ingest/jobs";
 import { cancelAllPlanner } from "./planner/jobs";
 import { registerCreatorIpc } from "./ipc/brand";
+import { registerPicturesIpc } from "./ipc/pictures";
 import { registerLibraryIpc } from "./ipc/library";
 import { registerRenderIpc } from "./ipc/render";
 import { renderQueue, resumeRendersSoon } from "./render";
@@ -67,6 +68,7 @@ if (!app.requestSingleInstanceLock()) {
 		registerAssetIpc();
 		registerLibraryIpc();
 		registerCreatorIpc();
+		registerPicturesIpc();
 		const win = createWindow();
 		if (boot.recovered) {
 			const message = boot.recovered;

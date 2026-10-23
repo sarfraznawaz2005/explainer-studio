@@ -332,7 +332,8 @@ function VoicesCard() {
 	};
 
 	const shown = useMemo(() => (voices ?? []).filter((v) => filter === "all" || v.gender === filter), [voices, filter]);
-	const groups = (["American", "British"] as const).map((accent) => ({ accent, list: shown.filter((v) => v.accent === accent) })).filter((g) => g.list.length);
+	// The engine sends the voices sorted by group, so the groups keep that order.
+	const groups = [...new Set(shown.map((v) => v.group))].map((group) => ({ group, list: shown.filter((v) => v.group === group) }));
 
 	return (
 		<Card>
@@ -389,8 +390,8 @@ function VoicesCard() {
 				) : (
 					<div role="radiogroup" aria-label="Default voice" className="space-y-4">
 						{groups.map((g) => (
-							<div key={g.accent} className="space-y-2">
-								<h4 className="text-[12px] font-medium uppercase tracking-wide text-muted-foreground">{g.accent} English</h4>
+							<div key={g.group} className="space-y-2">
+								<h4 className="text-[12px] font-medium uppercase tracking-wide text-muted-foreground">{g.group}</h4>
 								<div className="grid grid-cols-2 gap-2">
 									{g.list.map((v) => {
 										const selected = v.id === voice;
@@ -423,7 +424,10 @@ function VoicesCard() {
 															{v.name}
 															{playing === v.id ? <AudioLines className="size-3.5 text-primary" /> : null}
 														</span>
-														<span className="block text-[12px] capitalize text-muted-foreground">{v.gender}</span>
+														<span className="block text-[12px] text-muted-foreground">
+															<span className="capitalize">{v.gender}</span>
+															{v.downloadBytes ? ` · ${Math.round(v.downloadBytes / 1_000_000)} MB download on first play` : null}
+														</span>
 													</span>
 													<span className="ml-auto flex items-center gap-1.5">
 														{v.recommended ? <Badge tone="primary">Top pick</Badge> : null}

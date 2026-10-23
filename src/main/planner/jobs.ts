@@ -24,6 +24,8 @@ import { aiSceneSchema, figureRefs, PlannerError, scriptSystem, type ChapterCont
 import { findScene, mergeVoice, regenerateChapter, regenerateScene, replaceChapter, replaceScene, scenePrompt } from "./edit";
 import { audienceFor } from "./audience";
 import { jsonInstructions } from "../ai/structured";
+import { findPictures, picturesCalls } from "../pictures/find";
+import { pictureFitter } from "../pictures/library";
 
 /** Planner runs in the background, one per draft. Results are saved to the draft; progress goes to the window. */
 const jobs = new Map<string, { abort: AbortController; draftId: string; last: PlannerUpdate }>();
@@ -97,7 +99,7 @@ async function slotTarget(slot: ModelSlot): Promise<SlotTarget> {
 	return { provider: d.providerName, kind, model: d.modelId, price: await priceBook().price(kind, d.modelId).catch(() => null) };
 }
 
-async function priced(step: PlanStep, calls: ReturnType<typeof outlineCalls>): Promise<Estimate> {
+export async function priced(step: PlanStep, calls: ReturnType<typeof outlineCalls>): Promise<Estimate> {
 	const slots = [...new Set<ModelSlot>(["planner", ...calls.map((c) => c.slot)])];
 	const targets = new Map(await Promise.all(slots.map(async (s) => [s, await slotTarget(s)] as const)));
 	return priceEstimate(step, calls, (s) => targets.get(s)!);
@@ -107,12 +109,57 @@ function scriptContext(d: Draft, settings: PlanSettings, outline: Outline): Chap
 	return { source: Source.parse(d.source), outline, settings, map: readMap(d.id) };
 }
 
+/** A vision model is set up (checks web photos, describes the user's own). */
+export function visionReady(): boolean {
+	try {
+		ai().describeSlot("vision");
+		return true;
+	} catch {
+		return false;
+	}
+}
+
+/** The script step searches the web for photos first, once, when the settings ask for it. */
+const searchesFirst = (source: Source, settings: PlanSettings) => settings.webPictures && !source.pictureSearch;
+
 export async function estimateStep(req: { draftId: string; step: PlanStep; settings: PlanSettings; outline?: Outline }): Promise<Estimate> {
 	const d = mustDraft(req.draftId);
-	if (req.step === "outline") return priced("outline", outlineCalls(Source.parse(d.source), req.settings));
+	const source = Source.parse(d.source);
+	if (req.step === "outline") return priced("outline", outlineCalls(source, req.settings));
 	const outline = req.outline ?? parsed(Outline, d.outline);
 	if (!outline) throw new Error("Make the outline first.");
-	return priced("script", scriptCalls(scriptContext(d, req.settings, outline)));
+	if (req.step === "pictures") return priced("pictures", picturesCalls(outline, req.settings, source, visionReady()));
+	const pictures = searchesFirst(source, req.settings) ? picturesCalls(outline, req.settings, source, visionReady()) : [];
+	return priced("script", [...pictures, ...scriptCalls(scriptContext(d, req.settings, outline))]);
+}
+
+/** Finds the outline's photos and saves them to the draft. Returns the new Source. */
+async function runPictures(draftId: string, outline: Outline, settings: PlanSettings, signal: AbortSignal, tell: (f: number, detail: string) => void): Promise<Source> {
+	const d = mustDraft(draftId);
+	const vision = visionReady();
+	const r = await findPictures({
+		draftDir: join(appFolders().drafts, draftId),
+		source: Source.parse(d.source),
+		outline,
+		settings,
+		ai: plannerAiFrom(ai(), draftId, signal),
+		vision,
+		deps: { signal, log: (m) => writeLog("pictures", "info", m), fit: pictureFitter(), format: settings.format },
+		onProgress: (p) => tell(p.total ? p.done / p.total : 0, p.detail),
+	});
+	repos.drafts.update(draftId, { source: r.source });
+	writeLog("pictures", "info", `draft ${draftId}: ${r.added} photos added (vision=${vision})${r.skipped.length ? `; none good for: ${r.skipped.join("; ")}` : ""}`);
+	return r.source;
+}
+
+export async function startPictures(req: { draftId: string; settings: PlanSettings; confirmedCost: boolean }): Promise<string> {
+	const d = mustDraft(req.draftId);
+	const outline = parsed(Outline, d.outline);
+	if (!outline) throw new Error("Make the outline first.");
+	await checkCost(() => estimateStep({ draftId: d.id, step: "pictures", settings: req.settings }), req.confirmedCost);
+	return start(d.id, "pictures", async (signal, tell) => {
+		await runPictures(d.id, outline, req.settings, signal, (f, detail) => tell(f * 0.98, detail));
+	});
 }
 
 /* ---------- Runs ---------- */
@@ -191,17 +238,28 @@ export async function startScript(req: { draftId: string; settings: PlanSettings
 	const outline = parsed(Outline, d.outline);
 	if (!outline) throw new Error("Make the outline first.");
 	if (!outline.approved) throw new Error("Approve the outline first.");
-	const ctx = scriptContext(d, settings, outline);
-	await checkCost(() => priced("script", scriptCalls(ctx)), req.confirmedCost);
+	let ctx = scriptContext(d, settings, outline);
+	await checkCost(() => estimateStep({ draftId: d.id, step: "script", settings, outline }), req.confirmedCost);
 	repos.drafts.update(d.id, { settings, level: settings.level });
 	return start(d.id, "script", async (signal, tell) => {
 		const planAi = plannerAiFrom(ai(), d.id, signal);
+		// Photos first, so the script can show them. A failed search never stops the script.
+		const first = searchesFirst(Source.parse(d.source), settings) ? 0.15 : 0;
+		if (first) {
+			try {
+				const source = await runPictures(d.id, outline, settings, signal, (f, detail) => tell(f * first, `Pictures: ${detail}`));
+				ctx = { ...ctx, source };
+			} catch (err) {
+				if (signal.aborted) throw err;
+				writeLog("pictures", "warn", `draft ${d.id}: picture search failed, writing the script without it`, err);
+			}
+		}
 		const { plan, report } = await generatePlan(ctx, planAi, {
 			signal,
 			onProgress: (p) => {
 				const working = p.chapters.map((c, i) => (c !== "waiting" && c !== "done" ? i + 1 : 0)).filter(Boolean);
 				const progress = p.chapters.reduce((n, c) => n + WEIGHT[c], 0) / Math.max(1, p.total);
-				tell(progress * 0.97, working.length ? `Writing chapter ${working.join(" and ")} of ${p.total}` : `${p.done} of ${p.total} chapters done`, p.chapters);
+				tell(first + progress * (0.97 - first), working.length ? `Writing chapter ${working.join(" and ")} of ${p.total}` : `${p.done} of ${p.total} chapters done`, p.chapters);
 			},
 		});
 		tell(0.99, "Saving the plan");

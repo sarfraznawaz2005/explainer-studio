@@ -1,5 +1,5 @@
 import { ArrowDown, ArrowUp, Plus, Trash2 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { z } from "zod";
 import { SCENE_PROPS, type SceneType } from "@shared/plan/schema";
 import { Button } from "@renderer/components/ui/button";
@@ -76,6 +76,29 @@ function blank(s: JSchema, hint = "New"): Json {
 	return null;
 }
 
+/** The draft's pictures, so a figure field is a picture picker instead of a file name box. */
+export type PictureChoice = { file: string; url: string; caption: string | null; origin: "source" | "mine" | "web" };
+export const PictureChoices = createContext<PictureChoice[] | null>(null);
+
+function PicturePicker({ value, onChange, label, disabled, required }: { value: Json; onChange: (v: Json, commit?: boolean) => void; label: string; disabled?: boolean; required: boolean }) {
+	const choices = useContext(PictureChoices)!;
+	const NONE = "__none__";
+	const current = choices.find((c) => c.file === value);
+	const opts = choices.map((c) => ({ value: c.file, label: c.caption ? (c.caption.length > 48 ? `${c.caption.slice(0, 47)}…` : c.caption) : c.file, hint: c.origin === "mine" ? "Yours" : c.origin === "web" ? "Web" : "Material" }));
+	return (
+		<div className="space-y-1.5">
+			<Select
+				ariaLabel={label}
+				value={typeof value === "string" ? value : required ? undefined : NONE}
+				disabled={disabled}
+				onChange={(v) => onChange(v === NONE ? undefined : v, true)}
+				options={required ? opts : [{ value: NONE, label: "—" }, ...opts]}
+			/>
+			{current ? <img src={current.url} alt="" className="max-h-28 rounded-md border object-contain" /> : null}
+		</div>
+	);
+}
+
 type Issue = { path: (string | number)[]; message: string };
 const pathKey = (p: (string | number)[]) => p.join(".");
 
@@ -111,6 +134,8 @@ function Field(props: FieldProps) {
 function FieldBody({ schema, value, onChange, path, label, required, issues, disabled, id }: FieldProps & { id: string }) {
 	const t = typeOf(schema);
 	const key = String(path.at(-1) ?? "");
+	const pictures = useContext(PictureChoices);
+	if (key === "figure" && pictures?.length && !schema.enum) return <PicturePicker value={value} onChange={onChange} label={label} disabled={disabled} required={required} />;
 	if (schema.enum) {
 		// Radix Select cannot hold an empty value, so "not set" has its own key.
 		const NONE = "__none__";

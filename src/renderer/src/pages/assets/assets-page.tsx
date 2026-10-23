@@ -200,16 +200,16 @@ function VoicesTab() {
 						<div className="min-w-0 flex-1">
 							<div className="text-[13px] font-medium">{v.name}</div>
 							<div className="text-[12px] text-muted-foreground">
-								{v.accent} English · {v.gender}
+								{v.group} · {v.gender}
 							</div>
 						</div>
 						{v.recommended ? <Badge tone="primary">Recommended</Badge> : null}
-						<Badge tone="success">Apache 2.0</Badge>
+						<Badge tone="success">{v.engine === "piper" ? "MIT" : "Apache 2.0"}</Badge>
 					</li>
 				))}
 			</ul>
 			<div className="border-t px-4 py-2.5 text-[12px] text-muted-foreground">
-				Kokoro voices. Pick the default voice and listen to samples in{" "}
+				Kokoro voices, plus Piper voices for Urdu. Pick the default voice and listen to samples in{" "}
 				<Link to="/settings" search={{ section: "voice" }} className="font-medium text-primary hover:underline">
 					Settings → Voice
 				</Link>

@@ -37,9 +37,12 @@ export const RenderSettings = z.object({
 export type RenderSettings = z.infer<typeof RenderSettings>;
 export const DEFAULT_RENDER: RenderSettings = { resolution: "1080p", fps: 30, quality: "standard", brand: true };
 
-/** Output size for a plan drawn at `width`×`height`. Remotion renders at composition size × scale. */
+/**
+ * Output size for a plan drawn at `width`×`height`. Remotion renders at composition size × scale.
+ * The resolution names the short side, as players do: 1080p vertical is 1080×1920.
+ */
 export function outputSize(plan: { width: number; height: number }, resolution: Resolution) {
-	const scale = RESOLUTIONS[resolution].height / plan.height;
+	const scale = RESOLUTIONS[resolution].height / Math.min(plan.width, plan.height);
 	// x264 needs even sizes.
 	const even = (n: number) => Math.max(2, Math.round(n / 2) * 2);
 	return { scale, width: even(plan.width * scale), height: even(plan.height * scale) };
