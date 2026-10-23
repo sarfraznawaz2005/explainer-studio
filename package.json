@@ -1,7 +1,7 @@
 {
   "name": "explainer-studio",
   "productName": "Explainer Studio",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "Turn any learning material into long-form YouTube explainer videos",
   "main": "./out/main/index.js",
   "author": "Sarfraz",

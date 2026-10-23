@@ -1,5 +1,12 @@
 [
   {
+    "version": "1.0.0",
+    "title": "Explainer Studio 1.0.0",
+    "changes": [
+      "First Release"
+    ]
+  },
+  {
     "version": "0.1.0",
     "title": "First release of Explainer Studio",
     "changes": [
