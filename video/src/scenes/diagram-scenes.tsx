@@ -28,7 +28,7 @@ function Step({ index, label, detail, vertical, count }: { index: number; label:
 	return (
 		<>
 			{index > 0 ? <Arrow at={at} vertical={vertical} /> : null}
-			<div style={{ ...appearStyle(p, 30), flex: vertical ? undefined : 1, minWidth: 0, display: "flex" }}>
+			<div style={{ ...appearStyle(p, 30, s.motion), flex: vertical ? undefined : 1, minWidth: 0, display: "flex" }}>
 				<Surface edge={{ side: vertical ? "left" : "top", color }} style={{ flex: 1, padding: compact ? "30px 26px" : tall && count > 4 ? "24px 34px" : "36px 40px" }}>
 					<div style={{ display: "flex", flexDirection: inline ? "row" : "column", gap: inline ? 30 : tall ? 8 : 16, alignItems: inline ? "center" : "flex-start" }}>
 						<div style={{ fontSize: 28, fontWeight: 700, color, letterSpacing: 2 }}>STEP {index + 1}</div>
@@ -71,7 +71,7 @@ function Column({ side, title, points, color }: { side: 0 | 1; title: string; po
 	const at = useRevealAt(side);
 	const p = useAppear(at);
 	return (
-		<div style={{ ...appearStyle(p, 40), flex: 1, minWidth: 0 }}>
+		<div style={{ ...appearStyle(p, 40, s.motion), flex: 1, minWidth: 0 }}>
 			<Surface style={{ padding: "44px 52px", height: "100%" }}>
 				<div style={{ fontFamily: s.headingFont, fontSize: 56, fontWeight: s.headingWeight, color, marginBottom: 32 }}>{title}</div>
 				<div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
@@ -85,9 +85,10 @@ function Column({ side, title, points, color }: { side: 0 | 1; title: string; po
 }
 
 function PointRow({ at, color, text }: { at: number; color: string; text: string }) {
+	const s = useStyle();
 	const p = useAppear(at);
 	return (
-		<div style={{ ...appearStyle(p, 14), display: "flex", gap: 22, alignItems: "flex-start", fontSize: 40, lineHeight: 1.3 }}>
+		<div style={{ ...appearStyle(p, 14, s.motion), display: "flex", gap: 22, alignItems: "flex-start", fontSize: 40, lineHeight: 1.3 }}>
 			<div style={{ flexShrink: 0, width: 16, height: 16, borderRadius: 99, background: color, marginTop: 16 }} />
 			<div>{text}</div>
 		</div>
@@ -131,7 +132,7 @@ export function CompareScene({ heading, left, right, verdict }: PropsOf<"compare
 					<Column side={1} title={right.title} points={right.points} color={s.accent2} />
 				</div>
 				{verdict ? (
-					<div style={{ ...appearStyle(verdictP, 16), fontSize: 40, textAlign: "center", color: s.muted }}>
+					<div style={{ ...appearStyle(verdictP, 16, s.motion), fontSize: 40, textAlign: "center", color: s.muted }}>
 						<span style={{ color: s.positive, fontWeight: 700 }}>In short: </span>
 						{verdict}
 					</div>

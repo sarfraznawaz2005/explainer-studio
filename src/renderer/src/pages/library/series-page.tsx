@@ -2,6 +2,7 @@ import { useNavigate } from "@tanstack/react-router";
 import { ArrowDown, ArrowUp, Clapperboard, FileStack, Library, MoreHorizontal, Pencil, Plus, Trash2, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
+import { STYLE_LABELS } from "@shared/plan/schema";
 import type { BrandKitView } from "@shared/brand";
 import { brandChannels } from "@shared/ipc/brand";
 import { libraryChannels, type DraftSummary } from "@shared/ipc/library";
@@ -23,7 +24,6 @@ const voiceLabel = (id: string) => {
 	const n = id.split("_")[1] ?? id;
 	return n.charAt(0).toUpperCase() + n.slice(1);
 };
-const STYLE_NAMES: Record<string, string> = { clean: "Clean", chalkboard: "Chalkboard", paper: "Paper", blueprint: "Blueprint", neon: "Neon", cartoon: "Cartoon", academic: "Academic", brand: "Brand" };
 
 function SeriesDialog({ open, onOpenChange, series, kits, onSaved }: { open: boolean; onOpenChange: (o: boolean) => void; series: SeriesView | null; kits: BrandKitView[]; onSaved: (s: SeriesView) => void }) {
 	const [title, setTitle] = useState("");
@@ -134,7 +134,7 @@ function AddDraftDialog({ series, open, onOpenChange, onAdded }: { series: Serie
 							<span className="text-[13px]">
 								Use the series style and voice
 								<span className="block text-[12px] text-muted-foreground">
-									{[series?.look.style ? STYLE_NAMES[series.look.style] : null, series?.look.voice ? voiceLabel(series.look.voice.voice) : null].filter(Boolean).join(" · ")}. A new voice means the voice is made again.
+									{[series?.look.style ? STYLE_LABELS[series.look.style] : null, series?.look.voice ? voiceLabel(series.look.voice.voice) : null].filter(Boolean).join(" · ")}. A new voice means the voice is made again.
 								</span>
 							</span>
 							<Switch checked={look} onChange={setLook} ariaLabel="Use the series style and voice" />
@@ -291,7 +291,7 @@ export function SeriesPage() {
 								</div>
 								{s.description ? <p className="mt-0.5 line-clamp-2 text-[12.5px] text-muted-foreground">{s.description}</p> : null}
 								<div className="mt-1.5 flex flex-wrap gap-1.5 text-[11.5px] text-muted-foreground">
-									{s.look.style ? <span className="rounded-md bg-muted px-1.5 py-0.5">Style: {STYLE_NAMES[s.look.style]}</span> : null}
+									{s.look.style ? <span className="rounded-md bg-muted px-1.5 py-0.5">Style: {STYLE_LABELS[s.look.style]}</span> : null}
 									{s.look.voice ? <span className="rounded-md bg-muted px-1.5 py-0.5">Voice: {voiceLabel(s.look.voice.voice)}</span> : null}
 									<span className="rounded-md bg-muted px-1.5 py-0.5">Brand: {s.brandKitId ? (kitName.get(s.brandKitId) ?? "kit") : "default kit"}</span>
 									{s.videosWithoutDraft ? <span className="rounded-md bg-muted px-1.5 py-0.5">{s.videosWithoutDraft} older video(s) without a draft</span> : null}

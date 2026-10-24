@@ -2,7 +2,7 @@ import { createContext, useContext, type CSSProperties, type ReactNode } from "r
 import { AbsoluteFill, interpolate, spring, useCurrentFrame, useVideoConfig } from "remotion";
 import { cueFrame, msToFrames, type TimedScene } from "../../../src/shared/plan/timing";
 import type { FigureMeta } from "../../../src/shared/source";
-import { glow, outline, texture, type VisualStyle } from "../styles/styles";
+import { DEFAULT_MOTION, glow, outline, texture, type Motion, type VisualStyle } from "../styles/styles";
 
 /** What every scene can read: its timing (sentences, cues), the visual style and where source figures live. */
 type SceneCtx = { timed: TimedScene; style: VisualStyle; figureBase?: string; figureMeta?: Record<string, FigureMeta> };
@@ -20,12 +20,17 @@ export function useScene(): SceneCtx {
 
 export const useStyle = () => useScene().style;
 
-/** 0 → 1 spring that starts at `at` (scene-relative frame). Before `at` it is 0. */
+/**
+ * 0 → 1 spring that starts at `at` (scene-relative frame). Before `at` it is 0.
+ * The style's motion sets the bounce and speed, unless the caller sets its own spring.
+ */
 export function useAppear(at: number | null, opts: { damping?: number; mass?: number } = {}): number {
 	const frame = useCurrentFrame();
 	const { fps } = useVideoConfig();
+	const m = useContext(Ctx)?.style.motion ?? DEFAULT_MOTION;
 	if (at === null) return 0;
-	return spring({ frame: frame - at, fps, config: { damping: opts.damping ?? 18, mass: opts.mass ?? 0.7 } });
+	const own = opts.damping !== undefined || opts.mass !== undefined;
+	return spring({ frame: (frame - at) * m.speed, fps, config: { damping: opts.damping ?? (own ? 18 : m.damping), mass: opts.mass ?? (own ? 0.7 : m.mass) } });
 }
 
 /** Frame at which item `target` should appear. Falls back to the scene start. */
@@ -71,9 +76,30 @@ export function useLayout() {
 	};
 }
 
-/** Fades from a hidden state: opacity plus a small slide. */
-export function appearStyle(p: number, dy = 24): CSSProperties {
-	return { opacity: p, transform: `translateY(${(1 - p) * dy}px)` };
+/**
+ * Comes in from a hidden state: opacity plus the style's entry motion (a small rise by default).
+ * `dy` is the travel distance in pixels; motions without travel (pop, fade, blur) ignore it.
+ */
+export function appearStyle(p: number, dy = 24, m: Motion = DEFAULT_MOTION): CSSProperties {
+	const d = (1 - p) * dy * m.dist;
+	const opacity = Math.min(1, Math.max(0, p));
+	switch (m.enter) {
+		case "drop":
+			return { opacity, transform: `translateY(${-d}px)` };
+		case "slide":
+			return { opacity, transform: `translateX(${d}px)` };
+		case "pop":
+			return { opacity, transform: `scale(${0.82 + 0.18 * p})` };
+		case "fade":
+			return { opacity };
+		case "blur":
+			// No filter once in, so a texture or glow filter set next to it is not replaced for good.
+			return p >= 0.995 ? { opacity } : { opacity, filter: `blur(${((1 - Math.min(1, p)) * 12).toFixed(2)}px)` };
+		case "swing":
+			return { opacity, transform: `translateY(${d}px) rotate(${(-(1 - p) * 5).toFixed(2)}deg)`, transformOrigin: "left bottom" };
+		default:
+			return { opacity, transform: `translateY(${d}px)` };
+	}
 }
 
 /**
@@ -95,7 +121,7 @@ export function SceneFrame({ heading, children, center, bleed }: { heading?: str
 		// bleed: no padding, the scene draws edge to edge (photos).
 		<AbsoluteFill style={{ opacity: p * exit, transform, padding: bleed ? 0 : `${pad.top}px ${pad.side}px ${pad.bottom}px`, color: style.text, fontFamily: style.bodyFont }}>
 			{heading ? (
-				<div style={{ ...appearStyle(headP, 16), marginBottom: vertical ? 64 : 56 }}>
+				<div style={{ ...appearStyle(headP, 16, style.motion), marginBottom: vertical ? 64 : 56 }}>
 					<Heading size={vertical ? 72 : 64}>{heading}</Heading>
 				</div>
 			) : null}

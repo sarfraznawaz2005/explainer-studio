@@ -230,7 +230,7 @@ export function AnalogyScene({ heading, idea, like, pairs, limit }: PropsOf<"ana
 	return (
 		<SceneFrame heading={heading}>
 			<div style={{ ...texture(s), display: "flex", flexDirection: "column", gap: pairs.length > 3 ? 16 : 24 }}>
-				<div style={{ ...appearStyle(top, 16), display: "grid", gridTemplateColumns: cols, alignItems: "center", marginBottom: 10 }}>
+				<div style={{ ...appearStyle(top, 16, s.motion), display: "grid", gridTemplateColumns: cols, alignItems: "center", marginBottom: 10 }}>
 					<div style={{ fontFamily: s.headingFont, fontSize: vertical ? 44 : 54, fontWeight: 800, color: s.accent, textAlign: "center" }}>{idea}</div>
 					<div style={{ textAlign: "center", transform: `scale(${link})` }}>
 						<span style={{ display: "inline-block", padding: vertical ? "8px 14px" : "10px 22px", borderRadius: 999, whiteSpace: "nowrap", fontSize: vertical ? 22 : 26, background: s.hand ? "transparent" : s.text, color: s.hand ? s.text : s.bg, border: s.hand ? `3px ${s.line.style} ${s.text}` : "none", fontWeight: 800, letterSpacing: 1.5, textTransform: "uppercase" }}>is like</span>
@@ -241,7 +241,7 @@ export function AnalogyScene({ heading, idea, like, pairs, limit }: PropsOf<"ana
 					<AnalogyPair key={i} at={frames[i]!} idea={p.idea} like={p.like} size={size} link={vertical ? 110 : 180} />
 				))}
 				{limit ? (
-					<div style={{ ...appearStyle(limitP, 16), marginTop: 12, display: "flex", flexDirection: vertical ? "column" : "row", gap: vertical ? 6 : 20, alignItems: "baseline", fontSize: 34, lineHeight: 1.35, padding: "18px 28px", borderRadius: Math.min(16, s.radius), background: s.hand ? "transparent" : `${s.accent3}18`, ...borders(`${s.line.width}px ${s.line.style} ${s.accent3}`) }}>
+					<div style={{ ...appearStyle(limitP, 16, s.motion), marginTop: 12, display: "flex", flexDirection: vertical ? "column" : "row", gap: vertical ? 6 : 20, alignItems: "baseline", fontSize: 34, lineHeight: 1.35, padding: "18px 28px", borderRadius: Math.min(16, s.radius), background: s.hand ? "transparent" : `${s.accent3}18`, ...borders(`${s.line.width}px ${s.line.style} ${s.accent3}`) }}>
 						<span style={{ color: s.accent3, fontWeight: 800, whiteSpace: "nowrap" }}>Where it breaks:</span>
 						<span>{limit}</span>
 					</div>
@@ -257,7 +257,7 @@ function AnalogyPair({ at, idea, like, size, link }: { at: number; idea: string;
 	const p = useAppear(at);
 	const draw = ramp(frame, at + 4, at + 16);
 	return (
-		<div style={{ ...appearStyle(p, 20), display: "grid", gridTemplateColumns: `1fr ${link}px 1fr`, alignItems: "center" }}>
+		<div style={{ ...appearStyle(p, 20, s.motion), display: "grid", gridTemplateColumns: `1fr ${link}px 1fr`, alignItems: "center" }}>
 			<Surface edge={{ side: "left", color: s.accent }} style={{ padding: "20px 28px", fontSize: size, lineHeight: 1.3 }}>
 				{idea}
 			</Surface>
@@ -292,7 +292,7 @@ export function DialogueScene({ setting, characters, lines }: PropsOf<"dialogue"
 		<SceneFrame center>
 			<div style={{ position: "relative", width: contentW, height: H }}>
 				{setting ? (
-					<div style={{ ...appearStyle(intro, 10), position: "absolute", left: 0, right: 0, top: 0, textAlign: "center", fontSize: 30, color: s.muted, letterSpacing: s.hand ? 0 : 2, textTransform: "uppercase" }}>{setting}</div>
+					<div style={{ ...appearStyle(intro, 10, s.motion), position: "absolute", left: 0, right: 0, top: 0, textAlign: "center", fontSize: 30, color: s.muted, letterSpacing: s.hand ? 0 : 2, textTransform: "uppercase" }}>{setting}</div>
 				) : null}
 				{characters.map((c, i) => {
 					const mouth = talking === i ? Math.abs(Math.sin(frame * 0.75)) : 0;

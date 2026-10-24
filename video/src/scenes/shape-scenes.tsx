@@ -454,7 +454,7 @@ function ProsConsColumn({ title, sign, color, items, frames }: { title: string; 
 	return (
 		<div style={{ flex: 1, minWidth: 0 }}>
 			<Surface edge={{ side: "top", color }} style={{ padding: "36px 44px", height: "100%" }}>
-				<div style={{ ...appearStyle(head, 10), display: "flex", alignItems: "center", gap: 20, marginBottom: 30 }}>
+				<div style={{ ...appearStyle(head, 10, s.motion), display: "flex", alignItems: "center", gap: 20, marginBottom: 30 }}>
 					<div style={{ width: 62, height: 62, borderRadius: 99, background: s.hand ? "transparent" : color, border: s.hand ? `4px solid ${color}` : "none", color: s.hand ? color : s.onAccent, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 50, fontWeight: 800, lineHeight: 1 }}>{sign}</div>
 					<div style={{ fontFamily: s.headingFont, fontSize: 52, fontWeight: s.headingWeight, color }}>{title}</div>
 				</div>
@@ -469,9 +469,10 @@ function ProsConsColumn({ title, sign, color, items, frames }: { title: string; 
 }
 
 function ProsConsItem({ at, color, text }: { at: number; color: string; text: string }) {
+	const s = useStyle();
 	const p = useAppear(at);
 	return (
-		<div style={{ ...appearStyle(p, 16), display: "flex", gap: 20, alignItems: "flex-start", fontSize: 38, lineHeight: 1.3 }}>
+		<div style={{ ...appearStyle(p, 16, s.motion), display: "flex", gap: 20, alignItems: "flex-start", fontSize: 38, lineHeight: 1.3 }}>
 			<div style={{ flexShrink: 0, width: 14, height: 14, borderRadius: 99, background: color, marginTop: 16 }} />
 			<div>{text}</div>
 		</div>
@@ -491,7 +492,7 @@ export function ProsConsScene({ heading, pros, cons, verdict }: PropsOf<"proscon
 					<ProsConsColumn title="Cons" sign="−" color={s.accent2} items={cons} frames={frames.slice(pros.length)} />
 				</div>
 				{verdict ? (
-					<div style={{ ...appearStyle(verdictP, 16), fontSize: 40, textAlign: "center", color: s.muted }}>
+					<div style={{ ...appearStyle(verdictP, 16, s.motion), fontSize: 40, textAlign: "center", color: s.muted }}>
 						<span style={{ color: s.accent, fontWeight: 700 }}>On balance: </span>
 						{verdict}
 					</div>

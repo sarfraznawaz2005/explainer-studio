@@ -108,13 +108,19 @@ export function removeSeries(id: string): void {
 /** The draft's own style and voice, to start a series look from. */
 function draftLook(d: Draft): SeriesLook {
 	const plan = VideoPlan.safeParse(d.plan);
-	return { style: plan.success ? plan.data.meta.style : undefined, voice: voiceSetupOf(d) };
+	const meta = plan.success ? plan.data.meta : undefined;
+	return { style: meta?.style, look: meta?.style === "free" ? meta.look : undefined, voice: voiceSetupOf(d) };
 }
 
 function applyLook(d: Draft, look: SeriesLook) {
 	const patch: Partial<Pick<Draft, "plan" | "voice">> = {};
 	const plan = VideoPlan.safeParse(d.plan);
-	if (look.style && plan.success && plan.data.meta.style !== look.style) patch.plan = { ...plan.data, meta: { ...plan.data.meta, style: look.style } };
+	if (look.style && plan.success) {
+		const meta = plan.data.meta;
+		// An AI look is shared too, so every episode looks the same.
+		const recipe = look.style === "free" ? (look.look ?? meta.look) : meta.look;
+		if (meta.style !== look.style || JSON.stringify(recipe) !== JSON.stringify(meta.look)) patch.plan = { ...plan.data, meta: { ...meta, style: look.style, look: recipe } };
+	}
 	if (look.voice) patch.voice = look.voice;
 	if (Object.keys(patch).length) repos.drafts.update(d.id, patch);
 }

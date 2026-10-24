@@ -76,7 +76,7 @@ export function Thumbnail({ plan: input, variant, style: override, figureBase, b
 	}, [input]);
 	const stamp = parsed?.plan.meta.brand;
 	const colors = brand ?? (stamp ? { ...stamp.colors, font: stamp.font === "Inter" ? undefined : stamp.font } : undefined);
-	const style = styleFor(override ?? parsed?.plan.meta.style ?? "clean", colors);
+	const style = styleFor(override ?? parsed?.plan.meta.style ?? "clean", colors, parsed?.plan.meta.look);
 	useFonts(style);
 	if (!parsed) return <AbsoluteFill style={{ background: "#16161d" }} />;
 	const { plan, timeline } = parsed;

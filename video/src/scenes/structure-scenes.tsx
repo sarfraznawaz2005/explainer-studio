@@ -127,7 +127,7 @@ export function QuoteScene({ text, author, source }: PropsOf<"quote">) {
 					))}
 				</div>
 				{author || source ? (
-					<div style={{ ...appearStyle(by, 14), marginTop: 48, display: "flex", alignItems: "center", gap: 22, fontSize: 38 }}>
+					<div style={{ ...appearStyle(by, 14, s.motion), marginTop: 48, display: "flex", alignItems: "center", gap: 22, fontSize: 38 }}>
 						<div style={{ width: 70, height: 5, borderRadius: 4, background: s.accent2 }} />
 						{author ? <span style={{ fontWeight: 700 }}>{author}</span> : null}
 						{source ? <span style={{ color: s.muted, fontStyle: "italic" }}>{source}</span> : null}
@@ -147,7 +147,7 @@ function CheckRow({ index, text, count }: { index: number; text: string; count: 
 	const box = count > 5 ? 52 : 62;
 	const filled = tick > 0.5 && !s.hand;
 	return (
-		<div style={{ ...appearStyle(p, 24), display: "flex", alignItems: "center", gap: 32 }}>
+		<div style={{ ...appearStyle(p, 24, s.motion), display: "flex", alignItems: "center", gap: 32 }}>
 			<svg width={box} height={box} viewBox="0 0 60 60" style={{ flexShrink: 0, overflow: "visible" }}>
 				<rect x="3" y="3" width="54" height="54" rx={s.hand ? 6 : 14} fill={filled ? s.positive : "none"} stroke={s.positive} strokeWidth={4} strokeDasharray={s.line.style === "dashed" ? "7 6" : undefined} />
 				<path d="M16 31 L26 41 L45 19" fill="none" stroke={filled ? s.onAccent : s.positive} strokeWidth={7} strokeLinecap="round" strokeLinejoin="round" pathLength={1} strokeDasharray={1} strokeDashoffset={1 - tick} />
@@ -175,7 +175,7 @@ function GlossaryCard({ index, term, meaning, at, compact }: { index: number; te
 	const p = useAppear(at);
 	const color = accentAt(s, index);
 	return (
-		<div style={appearStyle(p, 26)}>
+		<div style={appearStyle(p, 26, s.motion)}>
 			<Surface
 				edge={{ side: "left", color }}
 				style={{ padding: compact ? "26px 34px" : "30px 44px", display: "flex", flexDirection: compact ? "column" : "row", gap: compact ? 10 : 40, alignItems: compact ? "flex-start" : "baseline" }}

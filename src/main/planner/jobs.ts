@@ -26,6 +26,8 @@ import { audienceFor } from "./audience";
 import { jsonInstructions } from "../ai/structured";
 import { findPictures, picturesCalls } from "../pictures/find";
 import { pictureFitter } from "../pictures/library";
+import { LookRecipe, lookSummary } from "@shared/plan/look";
+import { avoidList, designLook, lookCalls, type LookBrief } from "./look";
 
 /** Planner runs in the background, one per draft. Results are saved to the draft; progress goes to the window. */
 const jobs = new Map<string, { abort: AbortController; draftId: string; last: PlannerUpdate }>();
@@ -130,7 +132,62 @@ export async function estimateStep(req: { draftId: string; step: PlanStep; setti
 	if (!outline) throw new Error("Make the outline first.");
 	if (req.step === "pictures") return priced("pictures", picturesCalls(outline, req.settings, source, visionReady()));
 	const pictures = searchesFirst(source, req.settings) ? picturesCalls(outline, req.settings, source, visionReady()) : [];
-	return priced("script", [...pictures, ...scriptCalls(scriptContext(d, req.settings, outline))]);
+	const look = req.settings.style === "free" ? lookCalls(lookBrief(d, req.settings, outline)) : [];
+	return priced("script", [...pictures, ...scriptCalls(scriptContext(d, req.settings, outline)), ...look]);
+}
+
+/* ---------- AI free-form look ---------- */
+
+/** AI looks of the user's latest other videos, so a new look is not a copy of them. */
+function recentLooks(exceptId: string): string[] {
+	const out: string[] = [];
+	for (const d of repos.drafts.list({ orderBy: "updatedAt", limit: 12 })) {
+		if (d.id === exceptId) continue;
+		const look = (d.plan as { meta?: { look?: unknown } } | null)?.meta?.look;
+		const r = look ? LookRecipe.safeParse(look) : null;
+		if (r?.success) out.push(lookSummary(r.data));
+		if (out.length >= 3) break;
+	}
+	return out;
+}
+
+function lookBrief(d: Draft, settings: PlanSettings, outline: Outline | null, current?: LookRecipe, wish?: string): LookBrief {
+	return {
+		title: outline?.title ?? d.title,
+		subject: outline?.subject || undefined,
+		level: settings.level,
+		tone: settings.tone,
+		language: settings.language,
+		vertical: settings.format === "vertical",
+		avoid: avoidList(current, recentLooks(d.id)),
+		wish,
+	};
+}
+
+/** The draft's settings for a look: saved settings, else what the plan says. */
+function lookSettings(d: Draft, plan: VideoPlan): PlanSettings {
+	return parsed(PlanSettings, d.settings) ?? PlanSettings.parse({ level: plan.meta.level, language: plan.meta.language, format: plan.meta.height > plan.meta.width ? "vertical" : "landscape" });
+}
+
+export async function estimateLook(req: { draftId: string; wish?: string }): Promise<Estimate> {
+	const d = mustDraft(req.draftId);
+	const plan = parsed(VideoPlan, d.plan);
+	if (!plan) throw new Error("This draft has no script yet.");
+	return priced("look", lookCalls(lookBrief(d, lookSettings(d, plan), parsed(Outline, d.outline), plan.meta.look, req.wish)));
+}
+
+/**
+ * Designs a new AI look for a draft and returns it. Nothing is saved here: the Studio
+ * puts it into the plan as a normal edit, so it can be undone.
+ */
+export async function newLook(req: { draftId: string; wish?: string; confirmedCost: boolean }): Promise<LookRecipe> {
+	const d = mustDraft(req.draftId);
+	if (runningFor(d.id)) throw new Error("Wait for the AI to finish before changing the look.");
+	const plan = parsed(VideoPlan, d.plan);
+	if (!plan) throw new Error("This draft has no script yet.");
+	const brief = lookBrief(d, lookSettings(d, plan), parsed(Outline, d.outline), plan.meta.look, req.wish);
+	await checkCost(() => priced("look", lookCalls(brief)), req.confirmedCost);
+	return designLook(plannerAiFrom(ai(), d.id), brief);
 }
 
 /** Finds the outline's photos and saves them to the draft. Returns the new Source. */
@@ -262,8 +319,20 @@ export async function startScript(req: { draftId: string; settings: PlanSettings
 				tell(first + progress * (0.97 - first), working.length ? `Writing chapter ${working.join(" and ")} of ${p.total}` : `${p.done} of ${p.total} chapters done`, p.chapters);
 			},
 		});
+		let final = plan;
+		if (settings.style === "free") {
+			tell(0.97, "Designing the look");
+			try {
+				const look = await designLook(planAi, lookBrief(d, settings, outline));
+				final = { ...plan, meta: { ...plan.meta, look } };
+			} catch (err) {
+				if (signal.aborted) throw err;
+				// The video still works: "free" without a recipe uses the default AI look.
+				writeLog("planner", "warn", `draft ${d.id}: look design failed, using the default look`, err);
+			}
+		}
 		tell(0.99, "Saving the plan");
-		repos.drafts.update(d.id, { plan, report, stage: "preview" });
+		repos.drafts.update(d.id, { plan: final, report, stage: "preview" });
 	});
 }
 

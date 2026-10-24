@@ -152,7 +152,7 @@ export type QualityReport = z.infer<typeof QualityReport>;
 /* ---------- Cost and time estimate ---------- */
 
 /** outline and script run from the wizard; scene and chapter are Studio rewrites of one part; research writes material from a topic. */
-export const PlanStep = z.enum(["outline", "script", "scene", "chapter", "research", "pictures"]);
+export const PlanStep = z.enum(["outline", "script", "scene", "chapter", "research", "pictures", "look"]);
 export type PlanStep = z.infer<typeof PlanStep>;
 
 export const Estimate = z.object({

@@ -129,7 +129,7 @@ export function TraceScene({ heading, array, steps }: PropsOf<"trace">) {
 					</div>
 				) : null}
 				{step?.note ? (
-					<div style={{ ...appearStyle(note, 14), position: "absolute", left: 0, right: 0, bottom: 10, textAlign: "center", fontSize: 44, lineHeight: 1.3 }}>
+					<div style={{ ...appearStyle(note, 14, s.motion), position: "absolute", left: 0, right: 0, bottom: 10, textAlign: "center", fontSize: 44, lineHeight: 1.3 }}>
 						{step.note}
 					</div>
 				) : null}

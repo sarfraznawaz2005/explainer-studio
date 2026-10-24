@@ -123,7 +123,7 @@ export function CodeScene({ heading, language, code, steps }: PropsOf<"code">) {
 	return (
 		<SceneFrame heading={heading}>
 			<div style={{ display: "flex", flexDirection: vertical ? "column" : "row", gap: 44, flex: vertical ? undefined : 1, minHeight: 0, alignItems: vertical ? "stretch" : "flex-start" }}>
-				<div style={{ ...appearStyle(box, 24), flex: vertical ? undefined : 1.7, minWidth: 0 }}>
+				<div style={{ ...appearStyle(box, 24, s.motion), flex: vertical ? undefined : 1.7, minWidth: 0 }}>
 					<Surface bare={!s.dark && s.code.bg === "#16161d"} style={{ background: s.code.bg, padding: "34px 0", overflow: "hidden" }}>
 						<div style={{ display: "flex", gap: 10, padding: "0 34px 22px" }}>
 							{["#ff5f57", "#febc2e", "#28c840"].map((c) => (
@@ -153,7 +153,7 @@ export function CodeScene({ heading, language, code, steps }: PropsOf<"code">) {
 				</div>
 				<div style={{ ...texture(s), flex: vertical ? undefined : 1, minWidth: 0, minHeight: vertical ? 220 : undefined, display: hasNotes ? "flex" : "none", flexDirection: "column", gap: 20 }}>
 					{step?.note ? (
-						<div style={appearStyle(noteP, 20)}>
+						<div style={appearStyle(noteP, 20, s.motion)}>
 							<div style={{ fontSize: 26, letterSpacing: 3, color: s.accent, fontWeight: 700, marginBottom: 14 }}>
 								STEP {active + 1} · LINE{step.lines[0] === step.lines[1] ? ` ${step.lines[0]}` : `S ${step.lines[0]}–${step.lines[1]}`}
 							</div>

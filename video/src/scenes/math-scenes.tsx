@@ -82,7 +82,7 @@ function PieRow({ at, color, label, value, pct, unit, hot, compact }: { at: numb
 	const s = useStyle();
 	const p = useAppear(at);
 	return (
-		<div style={{ ...appearStyle(p, 14), display: "flex", alignItems: "center", gap: 22, fontSize: compact ? 30 : 38 }}>
+		<div style={{ ...appearStyle(p, 14, s.motion), display: "flex", alignItems: "center", gap: 22, fontSize: compact ? 30 : 38 }}>
 			<div style={{ width: compact ? 26 : 32, height: compact ? 26 : 32, borderRadius: s.hand ? 99 : 8, background: color, flexShrink: 0 }} />
 			<div style={{ flex: 1, minWidth: 0, fontWeight: hot ? 800 : 500, color: hot ? color : s.text, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{label}</div>
 			<div style={{ fontVariantNumeric: "tabular-nums", fontWeight: 700 }}>
@@ -106,7 +106,7 @@ function Counter({ index, at, value, from, label, prefix, unit, decimals, count 
 	const size = vertical ? (count === 1 ? 170 : count === 2 ? 140 : count === 3 ? 110 : 90) : count === 1 ? 190 : count === 2 ? 150 : count === 3 ? 116 : 94;
 	const roomy = vertical || count <= 2;
 	return (
-		<div style={{ ...appearStyle(p, 30), flex: 1, minWidth: 0 }}>
+		<div style={{ ...appearStyle(p, 30, s.motion), flex: 1, minWidth: 0 }}>
 			<Surface edge={{ side: "top", color }} style={{ padding: vertical && count > 2 ? "30px 40px" : roomy ? "56px 50px" : "46px 30px", textAlign: "center" }}>
 				<div style={{ fontFamily: s.headingFont, fontWeight: 800, fontSize: size, lineHeight: 1, color, fontVariantNumeric: "tabular-nums", letterSpacing: s.hand ? 0 : -size * 0.03, whiteSpace: "nowrap" }}>
 					{prefix ?? ""}
@@ -138,7 +138,7 @@ function EquationLine({ tex, note, at, current, size, stacked }: { tex: string; 
 	const s = useStyle();
 	const p = useAppear(at, { damping: 200 });
 	const html = texHtml(tex);
-	const cell = { ...appearStyle(p, 22), opacity: p * (current ? 1 : 0.5) };
+	const cell = { ...appearStyle(p, 22, s.motion), opacity: p * (current ? 1 : 0.5) };
 	if (stacked)
 		// Tall frames: the note goes under its formula.
 		return (

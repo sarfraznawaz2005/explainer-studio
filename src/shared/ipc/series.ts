@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { VoiceSetup } from "../narration";
+import { LookRecipe } from "../plan/look";
 import { StyleId } from "../plan/schema";
 import { defineChannel, NoInput, Ok } from "./channels";
 import { DraftBadge } from "./library";
@@ -7,7 +8,12 @@ import { DraftBadge } from "./library";
 const Id = z.uuid();
 
 /** The look every episode shares. Taken from the first episode when not set. */
-export const SeriesLook = z.object({ style: StyleId.optional(), voice: VoiceSetup.optional() });
+export const SeriesLook = z.object({
+	style: StyleId.optional(),
+	/** The AI free-form look recipe, when the style is "free". */
+	look: LookRecipe.optional(),
+	voice: VoiceSetup.optional(),
+});
 export type SeriesLook = z.infer<typeof SeriesLook>;
 
 export const SeriesForm = z.object({

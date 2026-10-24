@@ -22,10 +22,10 @@ const TRANSITIONS = [
 	{ value: "none", label: "Cut" },
 ] as const;
 
-const usd = (n: number) => (n < 0.01 ? "under $0.01" : `about $${n.toFixed(2)}`);
+export const usd = (n: number) => (n < 0.01 ? "under $0.01" : `about $${n.toFixed(2)}`);
 
 /** What a rewrite costs, in one line. */
-function costLine(e: Estimate): string {
+export function costLine(e: Estimate): string {
 	const time = `${Math.max(5, Math.round(e.seconds.low))}–${Math.max(10, Math.round(e.seconds.high))} s`;
 	if (e.billing === "free") return `Free with ${e.provider}. Takes ${time}.`;
 	if (e.billing === "subscription") return `Uses your ${e.provider} plan, no extra cost. Takes ${time}.`;

@@ -7,7 +7,7 @@ import { plannerChannels } from "@shared/ipc/planner";
 import { voiceChannels } from "@shared/ipc/voice";
 import type { NarrationStatus } from "@shared/narration";
 import { historyOf, pushEdit, redo, redoLabel, replacePresent, undo, undoLabel, type History } from "@shared/plan/history";
-import { STYLE_IDS, VideoPlan, type Scene, type StyleId, type VideoPlanInput } from "@shared/plan/schema";
+import { STYLE_IDS, STYLE_LABELS, VideoPlan, type Scene, type StyleId, type VideoPlanInput } from "@shared/plan/schema";
 import { buildSoundtrack } from "@shared/plan/soundtrack";
 import { computeTimeline, formatTime, msToFrames, sceneAt } from "@shared/plan/timing";
 import { PlanVideo, type PlanVideoProps } from "@video/plan/PlanVideo";
@@ -27,6 +27,7 @@ import { useAssets } from "@renderer/stores/assets";
 import { useNarration } from "@renderer/stores/narration";
 import { usePlanner } from "@renderer/stores/planner";
 import { RegenerateDialog } from "./edit-panel";
+import { LookButton } from "./look-button";
 import { Inspector, type InspectorEdit } from "./inspector";
 import { RenderButton } from "./render-dialog";
 import { PictureChoices, type PictureChoice } from "./props-form";
@@ -37,7 +38,6 @@ import { SoundControls } from "./sound-panel";
 import { TimelineStrip } from "./timeline-strip";
 import { VoiceControls } from "./voice-panel";
 
-const STYLE_LABELS: Record<StyleId, string> = { clean: "Clean", chalkboard: "Chalkboard", paper: "Paper", blueprint: "Blueprint", neon: "Neon", cartoon: "Cartoon", academic: "Academic", brand: "Brand" };
 const STYLE_OPTIONS = STYLE_IDS.map((value) => ({ value, label: STYLE_LABELS[value] }));
 const FORMAT_OPTIONS = (Object.keys(VIDEO_FORMATS) as VideoFormat[]).map((value) => ({ value, label: VIDEO_FORMATS[value].label, hint: VIDEO_FORMATS[value].hint }));
 
@@ -580,6 +580,7 @@ function StudioEditor({
 					<div className="w-32">
 						<Select<StyleId> ariaLabel="Visual style" value={shownStyle} onChange={setStyle} disabled={editor?.busy} options={STYLE_OPTIONS} />
 					</div>
+					{editor && style === "free" ? <LookButton draftId={editor.draftId} plan={plan} disabled={editor.busy} apply={editor.apply} /> : null}
 					{!wide ? null : (
 						<Tooltip content={inspectorOpen ? "Hide details" : "Show details"}>
 							<Button variant="ghost" size="icon-sm" aria-label="Toggle details panel" aria-pressed={inspectorOpen} onClick={() => setInspectorOpen((v) => !v)}>

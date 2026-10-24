@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { LookRecipe } from "../plan/look";
 import { SCENE_TYPES, VideoPlan, type SceneType } from "../plan/schema";
 import { Estimate, Outline, PlanSettings, PlanStep, QualityReport, TopicRequest } from "../planner";
 import { defineChannel, Ok } from "./channels";
@@ -63,6 +64,10 @@ export const plannerChannels = {
 	regenerateEstimate: defineChannel("planner:regenerate:estimate", z.object({ draftId: Id, target: RegenerateTarget }), Estimate),
 	/** Rewrites one scene or one chapter with the AI. The rest of the plan is not touched. */
 	regenerate: defineChannel("planner:regenerate", z.object({ draftId: Id, target: RegenerateTarget, instructions: Instructions, confirmedCost: z.boolean() }), z.object({ jobId: z.string() })),
+	/** Cost and time of a new AI free-form look. */
+	lookEstimate: defineChannel("planner:look:estimate", z.object({ draftId: Id, wish: z.string().trim().max(300).optional() }), Estimate),
+	/** Designs a new AI free-form look and returns it (the Studio saves it as an edit, so it can be undone). */
+	newLook: defineChannel("planner:look:new", z.object({ draftId: Id, wish: z.string().trim().max(300).optional(), confirmedCost: z.boolean() }), z.object({ look: LookRecipe })),
 	/** Cost and time of writing the material from a topic. */
 	topicEstimate: defineChannel("planner:topic:estimate", TopicRequest, Estimate),
 	/** Writes the material from a topic in the background. Progress and the new draft come as ingest updates, like reading files. */

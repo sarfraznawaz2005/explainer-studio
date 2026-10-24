@@ -25,6 +25,7 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
+import { STYLE_LABELS } from "@shared/plan/schema";
 import { LEVELS, type Level } from "@shared/ipc/ingest";
 import { plannerChannels as pc, type PlanDraft, type PlannerUpdate } from "@shared/ipc/planner";
 import { voiceChannels, type Voice } from "@shared/ipc/voice";
@@ -218,6 +219,7 @@ function SettingsCard({ settings, onChange, disabled }: { settings: PlanSettings
 							{ value: "auto", label: "Let AI decide", hint: "From topic and level" },
 							{ value: "clean", label: "Clean" },
 							{ value: "chalkboard", label: "Chalkboard" },
+							{ value: "free", label: "AI free-form", hint: "A new look made for this video" },
 						]}
 						disabled={disabled}
 					/>
@@ -617,7 +619,7 @@ function PlanResult({ draft, onRewrite, onEditOutline }: { draft: PlanDraft; onR
 				<div className="flex items-center gap-2">
 					<Badge tone="success">Plan ready</Badge>
 					<span className="text-[12px] text-muted-foreground">
-						{plan.meta.level} · {plan.meta.style === "chalkboard" ? "Chalkboard" : "Clean"} style
+						{plan.meta.level} · {plan.meta.style === "free" ? (plan.meta.look?.name ?? STYLE_LABELS.free) : STYLE_LABELS[plan.meta.style]} style
 					</span>
 				</div>
 				<CardTitle className="mt-1 text-lg" data-selectable>

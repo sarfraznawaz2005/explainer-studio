@@ -137,7 +137,7 @@ export function SvgScene({ heading, svg, animations, caption }: PropsOf<"svg">) 
 		<SceneFrame heading={heading} center={!heading}>
 			<div style={{ ...texture(s), display: "flex", flexDirection: "column", alignItems: "center", gap: 24 }}>
 				<SvgDrawing markup={svg} animations={animations} width={contentW} height={H} prefix={idPrefix(timed.scene.id)} />
-				{caption ? <div style={{ ...appearStyle(cap, 10), fontSize: 36, color: s.muted, textAlign: "center" }}>{caption}</div> : null}
+				{caption ? <div style={{ ...appearStyle(cap, 10, s.motion), fontSize: 36, color: s.muted, textAlign: "center" }}>{caption}</div> : null}
 			</div>
 		</SceneFrame>
 	);
@@ -244,7 +244,7 @@ function PhotoScene({ figure, caption, callouts, focus, meta }: PropsOf<"figure"
 				{caption ? (
 					<div
 						style={{
-							...appearStyle(cap, 10),
+							...appearStyle(cap, 10, s.motion),
 							position: "absolute",
 							left: pad.side,
 							right: pad.side,
@@ -295,7 +295,7 @@ function FramedFigure({ figure, caption, callouts, focus }: PropsOf<"figure">) {
 	return (
 		<SceneFrame center>
 			<div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 26 }}>
-				<div style={{ ...appearStyle(intro, 20), position: "relative", display: "inline-block", overflow: "hidden", borderRadius: Math.min(18, s.radius), ...borders(outline(s)), boxShadow: s.shadow, background: "#ffffff" }}>
+				<div style={{ ...appearStyle(intro, 20, s.motion), position: "relative", display: "inline-block", overflow: "hidden", borderRadius: Math.min(18, s.radius), ...borders(outline(s)), boxShadow: s.shadow, background: "#ffffff" }}>
 					<div style={{ position: "relative", transform: `scale(${zoom})`, transformOrigin: `${fx}% ${fy}%` }}>
 						<FigureImage file={figure} maxW={contentW - 60} maxH={H} credit={false} />
 						{callouts.map((c, i) => (
@@ -305,7 +305,7 @@ function FramedFigure({ figure, caption, callouts, focus }: PropsOf<"figure">) {
 					{/* Outside the zoom, so the slow push never crops the credit. */}
 					<PhotoCredit file={figure} />
 				</div>
-				{caption ? <div style={{ ...appearStyle(cap, 10), ...texture(s), fontSize: 34, color: s.muted, textAlign: "center", maxWidth: 1500 }}>{caption}</div> : null}
+				{caption ? <div style={{ ...appearStyle(cap, 10, s.motion), ...texture(s), fontSize: 34, color: s.muted, textAlign: "center", maxWidth: 1500 }}>{caption}</div> : null}
 			</div>
 		</SceneFrame>
 	);
@@ -367,7 +367,7 @@ export function DiagramScene({ heading, figure, svg, labels }: PropsOf<"diagram"
 	return (
 		<SceneFrame heading={heading} center={!heading}>
 			<div style={{ ...texture(s), display: "flex", justifyContent: "center" }}>
-				<div style={{ ...appearStyle(intro, 16), position: "relative", display: "inline-block" }}>
+				<div style={{ ...appearStyle(intro, 16, s.motion), position: "relative", display: "inline-block" }}>
 					{svg ? <SvgDrawing markup={svg} width={picW} height={picH} prefix={idPrefix(timed.scene.id)} /> : <FigureImage file={figure!} maxW={picW} maxH={picH} />}
 					<svg viewBox="0 0 100 100" preserveAspectRatio="none" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", overflow: "visible" }}>
 						{labels.map((l, i) => {
@@ -399,7 +399,7 @@ function NumberedDiagram({ heading, figure, svg, labels, frames, W, H }: { headi
 	return (
 		<SceneFrame heading={heading} center={!heading}>
 			<div style={{ ...texture(s), display: "flex", flexDirection: "column", alignItems: "center", gap: 34 }}>
-				<div style={{ ...appearStyle(intro, 16), position: "relative", display: "inline-block" }}>
+				<div style={{ ...appearStyle(intro, 16, s.motion), position: "relative", display: "inline-block" }}>
 					{svg ? <SvgDrawing markup={svg} width={W} height={picH} prefix={idPrefix(timed.scene.id)} /> : <FigureImage file={figure!} maxW={W} maxH={picH} />}
 					{labels.map((l, i) => {
 						const dot = interpolate(frame - frames[i]!, [0, 6, 12], [0, 1.3, 1], { extrapolateLeft: "clamp", extrapolateRight: "clamp" });
@@ -425,7 +425,7 @@ function NumberedLabel({ index, at, text, detail }: { index: number; at: number;
 	const p = useAppear(at + 6, { damping: 200 });
 	const color = accentAt(s, index);
 	return (
-		<div style={{ ...appearStyle(p, 14), display: "flex", gap: 22, alignItems: "baseline" }}>
+		<div style={{ ...appearStyle(p, 14, s.motion), display: "flex", gap: 22, alignItems: "baseline" }}>
 			<div style={{ flexShrink: 0, width: 40, textAlign: "right", fontSize: 32, fontWeight: 800, color }}>{index + 1}</div>
 			<div>
 				<span style={{ fontSize: 36, fontWeight: 800, color }}>{text}</span>

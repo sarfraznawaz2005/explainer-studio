@@ -48,13 +48,13 @@ export function PauseScene({ question, answer, hint }: PropsOf<"pause">) {
 						⏸ Pause and think
 					</Pill>
 				</div>
-				<div style={{ ...appearStyle(q, 20), fontFamily: s.headingFont, fontSize: question.length > 110 ? 58 : 72, fontWeight: s.headingWeight, lineHeight: 1.2, maxWidth: 1500, transform: `translateY(${-a * 10}px)` }}>{question}</div>
+				<div style={{ ...appearStyle(q, 20, s.motion), fontFamily: s.headingFont, fontSize: question.length > 110 ? 58 : 72, fontWeight: s.headingWeight, lineHeight: 1.2, maxWidth: 1500, transform: `translateY(${-a * 10}px)` }}>{question}</div>
 				<div style={{ height: vertical ? 460 : 230, display: "flex", alignItems: "center", justifyContent: "center", position: "relative", width: "100%" }}>
 					{thinking ? (
 						<div style={{ display: "flex", flexDirection: vertical ? "column" : "row", alignItems: "center", gap: vertical ? 30 : 50 }}>
 							<Countdown from={gap.from} duration={gap.duration} />
 							{hint ? (
-								<div style={{ ...appearStyle(hintP, 10), maxWidth: 800, textAlign: vertical ? "center" : "left", fontSize: 36, color: s.muted, lineHeight: 1.35 }}>
+								<div style={{ ...appearStyle(hintP, 10, s.motion), maxWidth: 800, textAlign: vertical ? "center" : "left", fontSize: 36, color: s.muted, lineHeight: 1.35 }}>
 									<span style={{ color: s.accent3, fontWeight: 800 }}>Hint: </span>
 									{hint}
 								</div>
@@ -62,7 +62,7 @@ export function PauseScene({ question, answer, hint }: PropsOf<"pause">) {
 						</div>
 					) : null}
 					{frame >= answerAt ? (
-						<div style={{ ...appearStyle(a, 30), position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+						<div style={{ ...appearStyle(a, 30, s.motion), position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
 							<Surface edge={{ side: "left", color: s.positive }} style={{ padding: "30px 46px", maxWidth: 1400, textAlign: "left" }}>
 								<div style={{ fontSize: 26, letterSpacing: 3, fontWeight: 800, color: s.positive, marginBottom: 10 }}>ANSWER</div>
 								<div style={{ fontSize: answer.length > 160 ? 38 : 46, lineHeight: 1.3 }}>{answer}</div>
@@ -94,7 +94,7 @@ export function QuizScene({ heading, questions }: PropsOf<"quiz">) {
 	if (k < 0)
 		return (
 			<SceneFrame center>
-				<div style={{ ...texture(s), ...appearStyle(intro, 20), textAlign: "center" }}>
+				<div style={{ ...texture(s), ...appearStyle(intro, 20, s.motion), textAlign: "center" }}>
 					<Heading size={96}>{heading ?? "Quick quiz"}</Heading>
 					<div style={{ marginTop: 30, fontSize: 40, color: s.muted }}>{questions.length === 1 ? "One question" : `${questions.length} questions`}</div>
 				</div>
@@ -145,7 +145,7 @@ export function QuizScene({ heading, questions }: PropsOf<"quiz">) {
 					})}
 				</div>
 				{q.explain ? (
-					<div style={{ ...appearStyle(explain, 12), fontSize: 36, color: s.muted, lineHeight: 1.35 }}>
+					<div style={{ ...appearStyle(explain, 12, s.motion), fontSize: 36, color: s.muted, lineHeight: 1.35 }}>
 						<span style={{ color: s.positive, fontWeight: 800 }}>Why: </span>
 						{q.explain}
 					</div>

@@ -207,8 +207,9 @@ export function PlanVideo({ plan: input, style: override, audioBase, soundtrack,
 	const parsed = usePlan(input);
 	const id = override ?? ("plan" in parsed ? parsed.plan.meta.style : "clean");
 	const stamp = "plan" in parsed ? parsed.plan.meta.brand : undefined;
+	const look = "plan" in parsed ? parsed.plan.meta.look : undefined;
 	const colors = useMemo(() => brand ?? (stamp ? stampColors(stamp) : undefined), [brand, stamp]);
-	const style = useMemo(() => styleFor(id, colors), [id, colors]);
+	const style = useMemo(() => styleFor(id, colors, look), [id, colors, look]);
 	useFonts(style, stamp ? brandFontStack(stamp.font) : undefined);
 	if ("error" in parsed) return <ProblemCard message={`This plan has a problem:\n${parsed.error}`} />;
 	const { timeline } = parsed;
