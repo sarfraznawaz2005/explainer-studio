@@ -1,5 +1,13 @@
 [
   {
+    "version": "1.0.2",
+    "title": "AI-Designed Looks for Custom Styles",
+    "changes": [
+      "When you pick a free-form style for your video, the AI now designs a unique look for it. This covers the colors, fonts and overall feel of the scenes.",
+      "Videos in custom styles look more polished and match your chosen style better."
+    ]
+  },
+  {
     "version": "1.0.1",
     "title": "Picture Library and Urdu Voices",
     "changes": [
