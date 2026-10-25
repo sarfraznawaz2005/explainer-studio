@@ -1,5 +1,12 @@
 [
   {
+    "version": "1.0.3",
+    "title": "Smoother Video Seeking",
+    "changes": [
+      "Fixed a problem where dragging the video timeline made playback jump to the end. Seeking to any point now works as expected."
+    ]
+  },
+  {
     "version": "1.0.2",
     "title": "AI-Designed Looks for Custom Styles",
     "changes": [
