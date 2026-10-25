@@ -1,5 +1,7 @@
 import { protocol } from "electron";
-import { open, stat } from "node:fs/promises";
+import { createReadStream } from "node:fs";
+import { stat } from "node:fs/promises";
+import { Readable } from "node:stream";
 import { MEDIA_SCHEME, mediaPath, mediaType, type MediaRoots } from "./media-url";
 
 /**
@@ -14,11 +16,13 @@ export function registerMediaScheme(): void {
 
 const HEADERS = { "Accept-Ranges": "bytes", "Cache-Control": "no-cache", "Access-Control-Allow-Origin": "*", "X-Content-Type-Options": "nosniff" };
 
-/** Open-ended ranges ("bytes=0-") get at most this much, so a long video is never read into memory whole. */
-const MAX_CHUNK = 8 * 1024 * 1024;
-
-/** Serves a byte range when asked (media elements seek with Range requests). */
-async function serveFile(path: string, range: string | null): Promise<Response> {
+/**
+ * Serves a byte range when asked (media elements seek with Range requests).
+ * An open-ended range ("bytes=N-") gets the whole rest of the file: Chromium takes a
+ * shorter answer as the end of the file, so seeking past it jumped to the end.
+ * The body is streamed, so a long video is never read into memory whole.
+ */
+async function serveFile(path: string, range: string | null, head: boolean): Promise<Response> {
 	let size: number;
 	try {
 		const s = await stat(path);
@@ -34,19 +38,13 @@ async function serveFile(path: string, range: string | null): Promise<Response> 
 	if (m) {
 		if (m[1]) {
 			start = Number(m[1]);
-			end = m[2] ? Math.min(size - 1, Number(m[2])) : Math.min(size - 1, start + MAX_CHUNK - 1);
+			if (m[2]) end = Math.min(size - 1, Number(m[2]));
 		} else if (m[2]) start = Math.max(0, size - Number(m[2]));
 		if (start > end || start >= size) return new Response("Bad range", { status: 416, headers: { "Content-Range": `bytes */${size}` } });
 	}
-	const f = await open(path, "r");
-	try {
-		const buf = Buffer.alloc(end - start + 1);
-		await f.read(buf, 0, buf.length, start);
-		const headers = { ...HEADERS, "Content-Length": String(buf.length), ...(m ? { "Content-Range": `bytes ${start}-${end}/${size}` } : {}) };
-		return new Response(buf, { status: m ? 206 : 200, headers });
-	} finally {
-		await f.close();
-	}
+	const headers = { ...HEADERS, "Content-Type": mediaType(path), "Content-Length": String(end - start + 1), ...(m ? { "Content-Range": `bytes ${start}-${end}/${size}` } : {}) };
+	const body = head || size === 0 ? null : (Readable.toWeb(createReadStream(path, { start, end })) as ReadableStream<Uint8Array>);
+	return new Response(body, { status: m ? 206 : 200, headers });
 }
 
 export function handleMediaProtocol(roots: () => MediaRoots): void {
@@ -54,6 +52,6 @@ export function handleMediaProtocol(roots: () => MediaRoots): void {
 		if (req.method !== "GET" && req.method !== "HEAD") return new Response("Method not allowed", { status: 405 });
 		const path = mediaPath(req.url, roots());
 		if (!path) return new Response("Not found", { status: 404 });
-		return serveFile(path, req.headers.get("range"));
+		return serveFile(path, req.headers.get("range"), req.method === "HEAD");
 	});
 }
