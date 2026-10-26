@@ -1,5 +1,14 @@
 [
   {
+    "version": "1.0.4",
+    "title": "AI-Designed Custom Scenes in Videos",
+    "changes": [
+      "The video planner can now make its own custom animated scenes with AI. This helps when the built-in scene types do not fit your topic.",
+      "These custom scenes run in a safe, protected space. They cannot harm your computer or your files.",
+      "Your videos can now show more kinds of visuals, so they look less alike from one video to the next."
+    ]
+  },
+  {
     "version": "1.0.3",
     "title": "Smoother Video Seeking",
     "changes": [
