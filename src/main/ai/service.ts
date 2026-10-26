@@ -9,7 +9,7 @@ import { describeProviderError } from "./providers/errors";
 import type { CallUsage, ImageInput, ProviderAdapter, ProviderConfig } from "./providers/types";
 import { NO_USAGE, runText } from "./run";
 import type { AiStore, Resolved } from "./store";
-import { generateStructured, type StructuredRequest, type StructuredResult, type TurnRunner } from "./structured";
+import { generateChecked, generateStructured, type CheckedRequest, type StructuredRequest, type StructuredResult, type TurnRunner } from "./structured";
 
 /** Who is calling and why. `purpose` is a short tag for the usage log, e.g. "plan.outline". */
 export type CallContext = {
@@ -84,6 +84,12 @@ export function createAiService(deps: { store: AiStore; prices: PriceBook; build
 		async generateStructured<S extends z.ZodType>(req: StructuredRequest<S>, ctx: CallContext): Promise<StructuredResult<z.output<S>>> {
 			const t = await target(ctx.slot);
 			return generateStructured(runner(t, ctx), req);
+		},
+
+		/** A reply checked by the caller (code, for example), with repair rounds. */
+		async generateChecked<T>(req: CheckedRequest<T>, ctx: CallContext): Promise<StructuredResult<T>> {
+			const t = await target(ctx.slot);
+			return generateChecked(runner(t, ctx), req);
 		},
 
 		/** Plain text from the slot's model. */

@@ -9,8 +9,8 @@ import { buildKnowledgeMap, mapForPrompt, needsMap, sourceForPrompt, type Knowle
 /** The outline as the model writes it: no ids, no approval flag. */
 export const AiOutline = Outline.omit({ approved: true, chapters: true }).extend({
 	chapters: z.array(OutlineChapter.omit({ id: true })).min(1).max(40),
-	/** "brand" and "free" are the user's own choices, never the AI's. */
-	style: StyleId.exclude(["brand", "free"]).default("clean"),
+	/** "brand", "free" and "code" are the user's own choices, never the AI's. */
+	style: StyleId.exclude(["brand", "free", "code"]).default("clean"),
 });
 
 /** Words of narration the video should have, or null for "as long as needed". */
@@ -31,7 +31,7 @@ export function outlineSystem(s: PlanSettings): string {
 		"- Short videos (3 minutes or less): 1 or 2 chapters, no recap chapter, and get to the point fast. Teach one idea well rather than many ideas briefly.",
 		"- The hook is the first 15 seconds: 2 to 3 short sentences with a question, puzzle or surprise that the video answers. Do not start with 'In this video'.",
 		"- `minutes` is the speaking time of each chapter.",
-		"- `style` (the whole-video look): 'cartoon' for kindergarten and young children; 'chalkboard' for school maths and a hand-drawn classroom feel; 'paper' for notes, writing and humanities; 'blueprint' for engineering, physics and how machines work; 'neon' for computing, technology and modern topics for teens; 'academic' for university and research topics; 'clean' for anything else. Never 'brand' or 'free' (the user picks those).",
+		"- `style` (the whole-video look): 'cartoon' for kindergarten and young children; 'chalkboard' for school maths and a hand-drawn classroom feel; 'paper' for notes, writing and humanities; 'blueprint' for engineering, physics and how machines work; 'neon' for computing, technology and modern topics for teens; 'academic' for university and research topics; 'clean' for anything else. Never 'brand', 'free' or 'code' (the user picks those).",
 		`- Write every title, goal, point and hook sentence in ${languageLabel(s.language)}. Tone: ${s.tone}.`,
 	].join("\n");
 }

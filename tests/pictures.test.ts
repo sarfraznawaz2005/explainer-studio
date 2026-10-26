@@ -181,6 +181,7 @@ describe("choosing pictures", () => {
 			return {
 				prompts,
 				images,
+				checked: () => Promise.reject(new Error("not used")),
 				async structured(req, call) {
 					expect(call.slot).toBe("vision");
 					prompts.push(req.prompt);
@@ -228,6 +229,7 @@ describe("findPictures", () => {
 		});
 		const purposes: string[] = [];
 		const ai: PlannerAi = {
+			checked: () => Promise.reject(new Error("not used")),
 			async structured(req, call) {
 				purposes.push(call.purpose);
 				if (call.purpose === "pictures.describe") return { description: "A boy holding a cricket bat." } as never;

@@ -45,6 +45,9 @@ export const RegenerateTarget = z.discriminatedUnion("kind", [
 export type RegenerateTarget = z.infer<typeof RegenerateTarget>;
 const Instructions = z.string().trim().max(500).optional();
 
+/** What the user wants from an AI design, in their own words. */
+const CodeWish = z.string().trim().max(600).optional();
+
 export const plannerChannels = {
 	get: defineChannel("planner:get", z.object({ draftId: Id }), PlanDraft),
 	/** Cost and time of the next step, before it runs. The script estimate uses the outline given (it may have unsaved edits). */
@@ -68,6 +71,10 @@ export const plannerChannels = {
 	lookEstimate: defineChannel("planner:look:estimate", z.object({ draftId: Id, wish: z.string().trim().max(300).optional() }), Estimate),
 	/** Designs a new AI free-form look and returns it (the Studio saves it as an edit, so it can be undone). */
 	newLook: defineChannel("planner:look:new", z.object({ draftId: Id, wish: z.string().trim().max(300).optional(), confirmedCost: z.boolean() }), z.object({ look: LookRecipe })),
+	/** Cost and time of new AI design code ("AI free-form" style). change: change the current code instead of a new design. */
+	codeEstimate: defineChannel("planner:code:estimate", z.object({ draftId: Id, wish: CodeWish, change: z.boolean() }), Estimate),
+	/** Writes AI design code in the background (test-drawn and fixed), then saves it to the plan. The Studio brings it in as one undo step. */
+	newCode: defineChannel("planner:code:new", z.object({ draftId: Id, wish: CodeWish, change: z.boolean(), seenErrors: z.array(z.string().max(600)).max(10).optional(), confirmedCost: z.boolean() }), z.object({ jobId: z.string() })),
 	/** Cost and time of writing the material from a topic. */
 	topicEstimate: defineChannel("planner:topic:estimate", TopicRequest, Estimate),
 	/** Writes the material from a topic in the background. Progress and the new draft come as ingest updates, like reading files. */

@@ -237,7 +237,7 @@ const SPEED = { slow: 0.7, normal: 1, fast: 1.45 } as const;
 
 const base = { headingWeight: 700, glow: false, texture: null, shadow: "none", motion: DEFAULT_MOTION } as const;
 
-export const STYLES: Record<Exclude<StyleId, "brand" | "free">, VisualStyle> & { brand: VisualStyle; free: VisualStyle } = {
+export const STYLES: Record<Exclude<StyleId, "brand" | "free" | "code">, VisualStyle> & { brand: VisualStyle; free: VisualStyle } = {
 	clean: {
 		...base,
 		id: "clean",
@@ -455,7 +455,8 @@ export function brandStyle(b: BrandColors): VisualStyle {
 /** The style for an id; "brand" uses the brand colours when given, "free" the AI's look recipe. */
 export function styleFor(id: StyleId, brand?: BrandColors, look?: LookRecipe): VisualStyle {
 	if (id === "brand") return brand ? brandStyle(brand) : STYLES.brand;
-	if (id === "free") return look ? lookStyle(look) : STYLES.free;
+	// "code" draws its own picture; this look is only for scenes whose code fails, and for thumbnails.
+	if (id === "free" || id === "code") return look ? lookStyle(look) : STYLES.free;
 	return STYLES[id] ?? STYLES.clean;
 }
 

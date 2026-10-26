@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { VoiceSetup } from "../narration";
 import { LookRecipe } from "../plan/look";
+import { VideoCode } from "../plan/code";
 import { StyleId } from "../plan/schema";
 import { defineChannel, NoInput, Ok } from "./channels";
 import { DraftBadge } from "./library";
@@ -12,6 +13,8 @@ export const SeriesLook = z.object({
 	style: StyleId.optional(),
 	/** The AI free-form look recipe, when the style is "free". */
 	look: LookRecipe.optional(),
+	/** The AI design code, when the style is "code". It reads every text from the plan, so it fits each episode. */
+	code: VideoCode.optional(),
 	voice: VoiceSetup.optional(),
 });
 export type SeriesLook = z.infer<typeof SeriesLook>;

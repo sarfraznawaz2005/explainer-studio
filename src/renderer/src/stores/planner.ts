@@ -12,7 +12,7 @@ type PlannerStore = {
 
 export const usePlanner = create<PlannerStore>(() => ({ byDraft: {}, finished: {} }));
 
-const STEP: Record<PlannerUpdate["step"], string> = { outline: "Outline", script: "Script and scenes", scene: "New scene", chapter: "New chapter", research: "Material", pictures: "Pictures", look: "New look" };
+const STEP: Record<PlannerUpdate["step"], string> = { outline: "Outline", script: "Script and scenes", scene: "New scene", chapter: "New chapter", research: "Material", pictures: "Pictures", look: "New look", code: "New AI design" };
 const DONE_HINT: Record<PlannerUpdate["step"], string> = {
 	outline: "Check it, change anything, then approve it.",
 	script: "Open it in the Studio to watch the preview.",
@@ -21,6 +21,7 @@ const DONE_HINT: Record<PlannerUpdate["step"], string> = {
 	pictures: "Check them in the Pictures card. The script uses them.",
 	research: "Check it, then continue to the outline.",
 	look: "The new look is in the Studio. Undo brings the old one back.",
+	code: "The new design is in the Studio. Undo brings the old one back.",
 };
 
 on(plannerEvents.update, PlannerUpdate, (u) => {

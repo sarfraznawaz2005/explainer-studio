@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState, type ComponentType } from "react";
-import { AbsoluteFill, Audio, continueRender, delayRender, interpolate, Sequence, useCurrentFrame, useVideoConfig } from "remotion";
+import { useEffect, useMemo, type ComponentType } from "react";
+import { AbsoluteFill, Audio, interpolate, Sequence, useCurrentFrame, useVideoConfig } from "remotion";
 import { VideoPlan, type Scene, type SceneType, type StyleId, type VideoPlanInput } from "../../../src/shared/plan/schema";
 import { musicVolumeAt, type MusicSpan, type Soundtrack } from "../../../src/shared/plan/soundtrack";
 import { computeTimeline, type TimedScene, type Timeline } from "../../../src/shared/plan/timing";
@@ -16,6 +16,9 @@ import { TableScene, TraceScene } from "../scenes/tech-scenes";
 import { BulletsScene, ChapterScene, DefinitionScene, ProblemCard, TitleScene } from "../scenes/text-scenes";
 import { styleFor, type BrandColors, type VisualStyle } from "../styles/styles";
 import { BrandIntro, BrandOutro, Watermark } from "./BrandLayer";
+import { CodeGuard, loadVideoCode, lockPage, resetLoops, setFigureBase, useCodeFonts, videoCodeAllowed, type VideoComponent } from "../code/runtime";
+import { codeVideoData } from "../../../src/shared/plan/code-data";
+import { waitOnce } from "./wait-once";
 import { brandFontStack, type BrandStamp } from "../../../src/shared/brand";
 import type { FigureMeta } from "../../../src/shared/source";
 
@@ -33,6 +36,8 @@ export type PlanVideoProps = {
 	figureMeta?: Record<string, FigureMeta>;
 	/** Colours for the "brand" style. */
 	brand?: BrandColors;
+	/** "code" style: told when the AI's code fails (scene index, -1 = the whole file). */
+	onCodeError?: (message: string, scene: number) => void;
 };
 
 // Each scene component takes its own props type; the registry erases that at the boundary.
@@ -81,16 +86,13 @@ export function usePlan(input: VideoPlanInput): { plan: VideoPlan; timeline: Tim
 
 /** Blocks rendering until the fonts a style uses are loaded, so no frame shows a fallback font. */
 export function useFonts(style: VisualStyle, extra?: string) {
-	const [handle] = useState(() => delayRender("Loading fonts"));
-	useEffect(() => {
-		const fams = [style.headingFont, style.bodyFont, style.monoFont, ...(extra ? [extra] : [])].map((f) => f.split(",")[0]!.trim());
+	const fams = [style.headingFont, style.bodyFont, style.monoFont, ...(extra ? [extra] : [])].map((f) => f.split(",")[0]!.trim());
+	waitOnce(`fonts:${fams.join("|")}`, "Loading fonts", () => {
 		// KaTeX fonts too, so the first frame of an equation is never drawn in a fallback font.
 		const math = ["KaTeX_Main", "KaTeX_Math", "KaTeX_Size1", "KaTeX_Size2", "KaTeX_AMS"].map((f) => document.fonts.load(`400 40px ${f}`));
 		const mathExtra = [document.fonts.load("italic 400 40px KaTeX_Math"), document.fonts.load("700 40px KaTeX_Main")];
-		Promise.all([...fams.flatMap((f) => [document.fonts.load(`400 40px ${f}`), document.fonts.load(`700 40px ${f}`)]), ...math, ...mathExtra])
-			.catch(() => undefined)
-			.finally(() => continueRender(handle));
-	}, [handle, style, extra]);
+		return Promise.all([...fams.flatMap((f) => [document.fonts.load(`400 40px ${f}`), document.fonts.load(`700 40px ${f}`)]), ...math, ...mathExtra]);
+	});
 }
 
 function ChapterProgress({ timeline, style }: { timeline: Timeline; style: VisualStyle }) {
@@ -202,8 +204,47 @@ function BrandLayer({ b, timeline, dark }: { b: BrandStamp; timeline: Timeline; 
 	);
 }
 
+/** Index of the scene on screen at a frame. */
+function sceneIndexAt(timeline: Timeline, frame: number): number {
+	let at = 0;
+	timeline.scenes.forEach((s, i) => {
+		if (s.from <= frame) at = i;
+	});
+	return at;
+}
+
+/**
+ * "code" style: the AI's component draws the whole picture. When it crashes, the
+ * built-in scene is drawn for the rest of that scene (CodeGuard).
+ */
+function CodeLayer({ Video, plan, timeline, style, figureBase, figureMeta, onCodeError }: { Video: VideoComponent; plan: VideoPlan; timeline: Timeline; style: VisualStyle; figureBase?: string; figureMeta?: Record<string, FigureMeta>; onCodeError?: PlanVideoProps["onCodeError"] }) {
+	const frame = useCurrentFrame();
+	useCodeFonts();
+	const video = useMemo(() => codeVideoData(plan, timeline), [plan, timeline]);
+	setFigureBase(figureBase);
+	resetLoops();
+	const at = sceneIndexAt(timeline, frame);
+	const t = timeline.scenes[at];
+	const Background = style.Background;
+	const fallback = t ? (
+		<AbsoluteFill style={{ background: style.bg }}>
+			<Background />
+			<Sequence from={t.from} durationInFrames={t.durationInFrames} name="built-in scene (code failed)">
+				<SceneProvider value={{ timed: t, style, figureBase, figureMeta }}>
+					<SceneView scene={t.scene} />
+				</SceneProvider>
+			</Sequence>
+		</AbsoluteFill>
+	) : null;
+	return (
+		<CodeGuard at={at} fallback={fallback} onError={onCodeError}>
+			<Video video={video} />
+		</CodeGuard>
+	);
+}
+
 /** The whole video: background, one Sequence per scene, chapter progress bar, brand layer. */
-export function PlanVideo({ plan: input, style: override, audioBase, soundtrack, figureBase, figureMeta, brand }: PlanVideoProps) {
+export function PlanVideo({ plan: input, style: override, audioBase, soundtrack, figureBase, figureMeta, brand, onCodeError }: PlanVideoProps) {
 	const parsed = usePlan(input);
 	const id = override ?? ("plan" in parsed ? parsed.plan.meta.style : "clean");
 	const stamp = "plan" in parsed ? parsed.plan.meta.brand : undefined;
@@ -211,9 +252,33 @@ export function PlanVideo({ plan: input, style: override, audioBase, soundtrack,
 	const colors = useMemo(() => brand ?? (stamp ? stampColors(stamp) : undefined), [brand, stamp]);
 	const style = useMemo(() => styleFor(id, colors, look), [id, colors, look]);
 	useFonts(style, stamp ? brandFontStack(stamp.font) : undefined);
+	const source = id === "code" && "plan" in parsed && videoCodeAllowed() ? parsed.plan.meta.code?.source : undefined;
+	const code = useMemo(() => {
+		if (!source) return null;
+		lockPage([audioBase, figureBase, soundtrack?.music[0]?.src, soundtrack?.sfx[0]?.src]);
+		return loadVideoCode(source);
+	}, [source, audioBase, figureBase, soundtrack]);
+	useEffect(() => {
+		if (code && !code.ok) onCodeError?.(code.problems.join("\n"), -1);
+	}, [code, onCodeError]);
 	if ("error" in parsed) return <ProblemCard message={`This plan has a problem:\n${parsed.error}`} />;
 	const { timeline } = parsed;
 	const Background = style.Background;
+	if (code?.ok)
+		return (
+			<AbsoluteFill style={{ background: style.bg }}>
+				<CodeLayer Video={code.Video} plan={parsed.plan} timeline={timeline} style={style} figureBase={figureBase} figureMeta={figureMeta} onCodeError={onCodeError} />
+				{audioBase
+					? timeline.scenes.map((t) => (
+							<Sequence key={t.scene.id} from={t.from} durationInFrames={t.durationInFrames} name={`voice: ${t.scene.id}`} layout="none">
+								<SceneVoice timed={t} audioBase={audioBase} fps={timeline.fps} />
+							</Sequence>
+						))
+					: null}
+				{soundtrack ? <SoundLayer st={soundtrack} fps={timeline.fps} /> : null}
+				{stamp ? <BrandLayer b={stamp} timeline={timeline} dark={style.dark} /> : null}
+			</AbsoluteFill>
+		);
 	return (
 		<AbsoluteFill style={{ background: style.bg }}>
 			<Background />

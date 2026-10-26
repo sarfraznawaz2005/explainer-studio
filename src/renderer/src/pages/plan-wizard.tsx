@@ -219,11 +219,26 @@ function SettingsCard({ settings, onChange, disabled }: { settings: PlanSettings
 							{ value: "auto", label: "Let AI decide", hint: "From topic and level" },
 							{ value: "clean", label: "Clean" },
 							{ value: "chalkboard", label: "Chalkboard" },
-							{ value: "free", label: "AI free-form", hint: "A new look made for this video" },
+							{ value: "free", label: "AI look", hint: "AI picks colours, fonts and motion" },
+							{ value: "code", label: "AI free-form", hint: "AI designs and animates everything" },
 						]}
 						disabled={disabled}
 					/>
 				</Field>
+				{settings.style === "code" ? (
+					<Field label="What should it look like? (optional)">
+						<Textarea
+							aria-label="What should it look like?"
+							value={settings.styleWish ?? ""}
+							maxLength={600}
+							onChange={(e) => set("styleWish", e.target.value || undefined)}
+							placeholder="For example: a comic book, hand-drawn on paper, a 1980s arcade game, calm watercolours, a news show"
+							className="min-h-16 text-[13px]"
+							disabled={disabled}
+						/>
+						<p className="text-[12px] text-muted-foreground">The AI writes the video's picture as code. Each design is new. It costs more AI tokens than the other styles.</p>
+					</Field>
+				) : null}
 			</CardContent>
 		</Card>
 	);
@@ -619,7 +634,7 @@ function PlanResult({ draft, onRewrite, onEditOutline }: { draft: PlanDraft; onR
 				<div className="flex items-center gap-2">
 					<Badge tone="success">Plan ready</Badge>
 					<span className="text-[12px] text-muted-foreground">
-						{plan.meta.level} · {plan.meta.style === "free" ? (plan.meta.look?.name ?? STYLE_LABELS.free) : STYLE_LABELS[plan.meta.style]} style
+						{plan.meta.level} · {plan.meta.style === "free" ? (plan.meta.look?.name ?? STYLE_LABELS.free) : plan.meta.style === "code" ? (plan.meta.code?.name ?? STYLE_LABELS.code) : STYLE_LABELS[plan.meta.style]} style
 					</span>
 				</div>
 				<CardTitle className="mt-1 text-lg" data-selectable>

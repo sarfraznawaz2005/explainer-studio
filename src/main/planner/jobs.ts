@@ -28,6 +28,10 @@ import { findPictures, picturesCalls } from "../pictures/find";
 import { pictureFitter } from "../pictures/library";
 import { LookRecipe, lookSummary } from "@shared/plan/look";
 import { avoidList, designLook, lookCalls, type LookBrief } from "./look";
+import { VideoCode } from "@shared/plan/code";
+import { codeCalls, codeSummary, writeVideoCode, CODE_REPAIRS, type CodeBrief, type CodeProgress } from "./code";
+import { testDraw } from "../app/code-check";
+import { figureBaseFor } from "../app/media-url";
 
 /** Planner runs in the background, one per draft. Results are saved to the draft; progress goes to the window. */
 const jobs = new Map<string, { abort: AbortController; draftId: string; last: PlannerUpdate }>();
@@ -133,7 +137,8 @@ export async function estimateStep(req: { draftId: string; step: PlanStep; setti
 	if (req.step === "pictures") return priced("pictures", picturesCalls(outline, req.settings, source, visionReady()));
 	const pictures = searchesFirst(source, req.settings) ? picturesCalls(outline, req.settings, source, visionReady()) : [];
 	const look = req.settings.style === "free" ? lookCalls(lookBrief(d, req.settings, outline)) : [];
-	return priced("script", [...pictures, ...scriptCalls(scriptContext(d, req.settings, outline)), ...look]);
+	const code = req.settings.style === "code" ? codeCalls(codeBrief(d, req.settings, outline), null, sceneGuess(outline)) : [];
+	return priced("script", [...pictures, ...scriptCalls(scriptContext(d, req.settings, outline)), ...look, ...code]);
 }
 
 /* ---------- AI free-form look ---------- */
@@ -188,6 +193,78 @@ export async function newLook(req: { draftId: string; wish?: string; confirmedCo
 	const brief = lookBrief(d, lookSettings(d, plan), parsed(Outline, d.outline), plan.meta.look, req.wish);
 	await checkCost(() => priced("look", lookCalls(brief)), req.confirmedCost);
 	return designLook(plannerAiFrom(ai(), d.id), brief);
+}
+
+/* ---------- AI free-form code ---------- */
+
+/** Scenes a script will have, before it exists: about four a minute. */
+const sceneGuess = (outline: Outline) => Math.max(6, Math.round(outline.chapters.reduce((n, c) => n + c.minutes, 0) * 4));
+
+/** AI designs of the user's latest other videos, so a new one is not a copy of them. */
+function recentCodes(exceptId: string): string[] {
+	const out: string[] = [];
+	for (const d of repos.drafts.list({ orderBy: "updatedAt", limit: 12 })) {
+		if (d.id === exceptId) continue;
+		const code = (d.plan as { meta?: { code?: unknown } } | null)?.meta?.code;
+		const r = code ? VideoCode.safeParse(code) : null;
+		if (r?.success) out.push(codeSummary(r.data));
+		if (out.length >= 3) break;
+	}
+	return out;
+}
+
+function codeBrief(d: Draft, settings: PlanSettings, outline: Outline | null, opts: { wish?: string; current?: VideoCode; seenErrors?: string[] } = {}): CodeBrief {
+	return {
+		title: outline?.title ?? d.title,
+		level: settings.level,
+		tone: settings.tone,
+		language: settings.language,
+		wish: opts.wish ?? settings.styleWish,
+		avoid: [...(opts.current ? [codeSummary(opts.current)] : []), ...recentCodes(d.id)].slice(0, 4),
+		current: opts.current?.source,
+		seenErrors: opts.seenErrors,
+	};
+}
+
+/** The test draw for a draft: figures load from the draft's folder. */
+const drawFor = (draftId: string) => (plan: VideoPlan) => testDraw(plan, figureBaseFor(draftId));
+
+/** Progress lines for a code run, between two progress values. */
+function codeProgress(tell: (p: number, detail: string) => void, from: number, to: number): CodeProgress {
+	const tries = CODE_REPAIRS + 1;
+	return (step, attempt, problems) => {
+		const p = from + ((to - from) * (attempt - (step === "checking" ? 0.4 : 1))) / tries;
+		tell(p, step === "checking" ? `Test-drawing the design (try ${attempt} of ${tries})` : `Fixing ${problems} problem${problems === 1 ? "" : "s"} the test draw found (try ${attempt} of ${tries})`);
+	};
+}
+
+export async function estimateCode(req: { draftId: string; wish?: string; change: boolean }): Promise<Estimate> {
+	const d = mustDraft(req.draftId);
+	const plan = parsed(VideoPlan, d.plan);
+	if (!plan) throw new Error("This draft has no script yet.");
+	const current = req.change ? plan.meta.code : undefined;
+	return priced("code", codeCalls(codeBrief(d, lookSettings(d, plan), parsed(Outline, d.outline), { wish: req.wish, current }), plan));
+}
+
+/**
+ * Writes new video code for a draft (or changes the current code as the wish
+ * says) and saves it to the plan. The Studio brings it in as one undo step.
+ */
+export async function startCode(req: { draftId: string; wish?: string; change: boolean; seenErrors?: string[]; confirmedCost: boolean }): Promise<string> {
+	const d = mustDraft(req.draftId);
+	const plan = parsed(VideoPlan, d.plan);
+	if (!plan) throw new Error("This draft has no script yet.");
+	const current = req.change ? plan.meta.code : undefined;
+	const brief = codeBrief(d, lookSettings(d, plan), parsed(Outline, d.outline), { wish: req.wish, current, seenErrors: req.seenErrors });
+	await checkCost(() => priced("code", codeCalls(brief, plan)), req.confirmedCost);
+	return start(d.id, "code", async (signal, tell) => {
+		tell(0.03, current ? "Changing the design" : "Writing the design");
+		const code = await writeVideoCode(plannerAiFrom(ai(), d.id, signal), brief, plan, drawFor(d.id), codeProgress(tell, 0.05, 0.97));
+		signal.throwIfAborted();
+		// Into the plan as stored now (the user may have edited texts meanwhile).
+		const now = parsed(VideoPlan, mustDraft(d.id).plan) ?? plan;
+		repos.drafts.update(d.id, { plan: { ...now, meta: { ...now.meta, style: "code", code } } });
+	});
 }
 
 /** Finds the outline's photos and saves them to the draft. Returns the new Source. */
@@ -300,6 +377,8 @@ export async function startScript(req: { draftId: string; settings: PlanSettings
 	repos.drafts.update(d.id, { settings, level: settings.level });
 	return start(d.id, "script", async (signal, tell) => {
 		const planAi = plannerAiFrom(ai(), d.id, signal);
+		// The AI design (code) is a big step of its own: the chapters get less of the bar.
+		const scriptEnd = settings.style === "code" ? 0.6 : 0.97;
 		// Photos first, so the script can show them. A failed search never stops the script.
 		const first = searchesFirst(Source.parse(d.source), settings) ? 0.15 : 0;
 		if (first) {
@@ -316,7 +395,7 @@ export async function startScript(req: { draftId: string; settings: PlanSettings
 			onProgress: (p) => {
 				const working = p.chapters.map((c, i) => (c !== "waiting" && c !== "done" ? i + 1 : 0)).filter(Boolean);
 				const progress = p.chapters.reduce((n, c) => n + WEIGHT[c], 0) / Math.max(1, p.total);
-				tell(first + progress * (0.97 - first), working.length ? `Writing chapter ${working.join(" and ")} of ${p.total}` : `${p.done} of ${p.total} chapters done`, p.chapters);
+				tell(first + progress * (scriptEnd - first), working.length ? `Writing chapter ${working.join(" and ")} of ${p.total}` : `${p.done} of ${p.total} chapters done`, p.chapters);
 			},
 		});
 		let final = plan;
@@ -329,6 +408,17 @@ export async function startScript(req: { draftId: string; settings: PlanSettings
 				if (signal.aborted) throw err;
 				// The video still works: "free" without a recipe uses the default AI look.
 				writeLog("planner", "warn", `draft ${d.id}: look design failed, using the default look`, err);
+			}
+		}
+		if (settings.style === "code") {
+			tell(0.62, "Writing the design (the AI writes the video's code)");
+			try {
+				const code = await writeVideoCode(planAi, codeBrief(d, settings, outline), final, drawFor(d.id), codeProgress(tell, 0.64, 0.98));
+				final = { ...final, meta: { ...final.meta, code } };
+			} catch (err) {
+				if (signal.aborted) throw err;
+				// The video still works: "code" without code uses the built-in scenes. The Studio offers a new try.
+				writeLog("planner", "warn", `draft ${d.id}: the AI design failed, using the built-in scenes`, err);
 			}
 		}
 		tell(0.99, "Saving the plan");

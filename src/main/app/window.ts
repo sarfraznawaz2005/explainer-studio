@@ -2,8 +2,10 @@ import { app, BrowserWindow, dialog, screen, shell } from "electron";
 import { join } from "node:path";
 import { attachDevAids } from "../dev/tour";
 import { classifyLink } from "../security/links";
+import { closeCodeChecker } from "./code-check";
 import { writeLog } from "./logger";
 import { getPref, setPref } from "./prefs";
+import { PREVIEW_ORIGIN, PREVIEW_PAGE } from "./preview-protocol";
 import { themeBackground, themeState } from "./theme";
 
 let win: BrowserWindow | null = null;
@@ -145,6 +147,16 @@ export function createWindow(): BrowserWindow {
 	win.webContents.on("will-navigate", (e, url) => {
 		if (!isAppUrl(url)) e.preventDefault();
 	});
+
+	// Frames inside the app may only show the sandbox page for AI video code (es-preview://).
+	win.webContents.on("will-frame-navigate", (e) => {
+		if (!e.isMainFrame && !e.url.startsWith(`${PREVIEW_ORIGIN}${PREVIEW_PAGE}`)) {
+			writeLog("security", "warn", `blocked a frame navigation: ${e.url.slice(0, 200)}`);
+			e.preventDefault();
+		}
+	});
+	// The hidden check window must not keep the app open.
+	win.on("closed", closeCodeChecker);
 
 	attachDevAids(win);
 	if (process.env.ELECTRON_RENDERER_URL) void win.loadURL(process.env.ELECTRON_RENDERER_URL);

@@ -109,7 +109,7 @@ export function removeSeries(id: string): void {
 function draftLook(d: Draft): SeriesLook {
 	const plan = VideoPlan.safeParse(d.plan);
 	const meta = plan.success ? plan.data.meta : undefined;
-	return { style: meta?.style, look: meta?.style === "free" ? meta.look : undefined, voice: voiceSetupOf(d) };
+	return { style: meta?.style, look: meta?.style === "free" ? meta.look : undefined, code: meta?.style === "code" ? meta.code : undefined, voice: voiceSetupOf(d) };
 }
 
 function applyLook(d: Draft, look: SeriesLook) {
@@ -119,7 +119,9 @@ function applyLook(d: Draft, look: SeriesLook) {
 		const meta = plan.data.meta;
 		// An AI look is shared too, so every episode looks the same.
 		const recipe = look.style === "free" ? (look.look ?? meta.look) : meta.look;
-		if (meta.style !== look.style || JSON.stringify(recipe) !== JSON.stringify(meta.look)) patch.plan = { ...plan.data, meta: { ...meta, style: look.style, look: recipe } };
+		// The AI design code too: it reads its texts from each episode's plan.
+		const code = look.style === "code" ? (look.code ?? meta.code) : meta.code;
+		if (meta.style !== look.style || JSON.stringify(recipe) !== JSON.stringify(meta.look) || code?.source !== meta.code?.source) patch.plan = { ...plan.data, meta: { ...meta, style: look.style, look: recipe, code } };
 	}
 	if (look.voice) patch.voice = look.voice;
 	if (Object.keys(patch).length) repos.drafts.update(d.id, patch);

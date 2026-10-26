@@ -1,11 +1,13 @@
 import type { z } from "zod";
 import type { ModelSlot } from "@shared/ipc/ai";
 import type { AiService } from "../ai/service";
-import { generateStructured, type StructuredRequest, type TurnRunner } from "../ai/structured";
+import { generateChecked, generateStructured, type CheckedRequest, type StructuredRequest, type TurnRunner } from "../ai/structured";
 
 /** What the planner needs from the AI layer: one zod-valid value per call (with repair rounds). */
 export type PlannerAi = {
 	structured<S extends z.ZodType>(req: StructuredRequest<S>, call: { slot: ModelSlot; purpose: string; maxOutputTokens?: number }): Promise<z.output<S>>;
+	/** A reply the caller checks itself (AI video code), with repair rounds. */
+	checked<T>(req: CheckedRequest<T>, call: { slot: ModelSlot; purpose: string; maxOutputTokens?: number }): Promise<T>;
 };
 
 /** The app's AI service, tied to one draft (null: no draft row yet) and one cancel signal. */
@@ -13,6 +15,10 @@ export function plannerAiFrom(service: AiService, draftId: string | null, signal
 	return {
 		async structured(req, call) {
 			const r = await service.generateStructured(req, { slot: call.slot, purpose: call.purpose, draftId, abortSignal: signal, maxOutputTokens: call.maxOutputTokens });
+			return r.value;
+		},
+		async checked(req, call) {
+			const r = await service.generateChecked(req, { slot: call.slot, purpose: call.purpose, draftId, abortSignal: signal, maxOutputTokens: call.maxOutputTokens });
 			return r.value;
 		},
 	};
@@ -23,6 +29,9 @@ export function plannerAiFromRunner(run: (slot: ModelSlot, purpose: string) => T
 	return {
 		async structured(req, call) {
 			return (await generateStructured(run(call.slot, call.purpose), req)).value;
+		},
+		async checked(req, call) {
+			return (await generateChecked(run(call.slot, call.purpose), req)).value;
 		},
 	};
 }

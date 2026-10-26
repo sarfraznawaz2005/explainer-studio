@@ -28,6 +28,8 @@ import { useNarration } from "@renderer/stores/narration";
 import { usePlanner } from "@renderer/stores/planner";
 import { RegenerateDialog } from "./edit-panel";
 import { LookButton } from "./look-button";
+import { CodeButton, CodeDialog, CodeErrors, type SeenError } from "./code-button";
+import { SandboxPlayer, type PreviewHandle, type SandboxProps } from "./sandbox-player";
 import { Inspector, type InspectorEdit } from "./inspector";
 import { RenderButton } from "./render-dialog";
 import { PictureChoices, type PictureChoice } from "./props-form";
@@ -409,14 +411,22 @@ function StudioEditor({
 	const [picked, setPicked] = useState<string | undefined>(undefined);
 	const [inspectorOpen, setInspectorOpen] = useState(true);
 	const wide = useMediaQuery("(min-width: 1500px)");
-	const player = useRef<PlayerRef>(null);
+	// The real Player, or the sandboxed one for "AI free-form" code: both answer the calls the Studio makes.
+	const player = useRef<PreviewHandle>(null);
+	// "AI free-form" with code: the code runs only in the sandboxed preview (never in this window).
+	const codeMode = shownStyle === "code" && !!plan.meta.code;
+	const [codeErrors, setCodeErrors] = useState<SeenError[]>([]);
+	const [codeOpen, setCodeOpen] = useState(false);
+	const codeSource = plan.meta.code?.source;
+	useEffect(() => setCodeErrors([]), [codeSource]);
+	const onCodeError = useCallback((message: string, scene: number) => setCodeErrors((e) => (e.some((x) => x.scene === scene && x.message === message) ? e : [...e, { scene, message }].slice(-20))), []);
 
 	// The Player keeps its own clock; mirror it so the list, timeline and inspector follow along.
 	useEffect(() => {
 		const p = player.current;
 		if (!p) return;
 		// Development builds only: lets the voice sync test read the Player clock.
-		if (import.meta.env.DEV) (window as unknown as { __esPlayer?: PlayerRef }).__esPlayer = p;
+		if (import.meta.env.DEV) (window as unknown as { __esPlayer?: PreviewHandle }).__esPlayer = p;
 		// The Player sends frameupdate from inside its own effect. Setting state right there, every
 		// frame, is a chain of effect updates that React reports as "Maximum update depth exceeded".
 		// The newest frame is applied on the next animation frame instead (at most once per paint).
@@ -445,7 +455,7 @@ function StudioEditor({
 			p.removeEventListener("ended", onPause);
 			cancelAnimationFrame(raf);
 		};
-	}, []);
+	}, [codeMode]);
 
 	const active = sceneAt(timeline, frame);
 	// While playing, the inspector follows the playhead. A click pins a scene until playback moves on.
@@ -581,6 +591,7 @@ function StudioEditor({
 						<Select<StyleId> ariaLabel="Visual style" value={shownStyle} onChange={setStyle} disabled={editor?.busy} options={STYLE_OPTIONS} />
 					</div>
 					{editor && style === "free" ? <LookButton draftId={editor.draftId} plan={plan} disabled={editor.busy} apply={editor.apply} /> : null}
+					{editor && style === "code" ? <CodeButton plan={plan} disabled={editor.busy} onOpen={() => setCodeOpen(true)} /> : null}
 					{!wide ? null : (
 						<Tooltip content={inspectorOpen ? "Hide details" : "Show details"}>
 							<Button variant="ghost" size="icon-sm" aria-label="Toggle details panel" aria-pressed={inspectorOpen} onClick={() => setInspectorOpen((v) => !v)}>
@@ -608,26 +619,41 @@ function StudioEditor({
 					<div className="flex w-full flex-col gap-4 p-5">
 						{/* A vertical preview is as tall as fits the window, not as tall as the full width would make it. */}
 						<div className={cn("overflow-hidden rounded-xl border bg-black shadow-md", format === "vertical" && "mx-auto w-full max-w-[calc(72vh*9/16)]")}>
-							<Player
-								ref={player}
-								initialFrame={startFrame}
-								component={PlanVideo}
-								inputProps={inputProps}
-								durationInFrames={timeline.durationInFrames}
-								fps={timeline.fps}
-								compositionWidth={plan.meta.width}
-								compositionHeight={plan.meta.height}
-								style={{ width: "100%", aspectRatio: `${plan.meta.width} / ${plan.meta.height}` }}
-								controls
-								clickToPlay
-								doubleClickToFullscreen
-								spaceKeyToPlayOrPause={false}
-								// No shared audio tag pool: voice, music and effects premount together and overflow
-								// the default 5 tags, which crashes the preview. Electron allows autoplay, so the pool is not needed.
-								numberOfSharedAudioTags={0}
-								acknowledgeRemotionLicense
-							/>
+							{codeMode ? (
+								<SandboxPlayer ref={player} props={inputProps as SandboxProps} initialFrame={frame} onCodeError={onCodeError} style={{ width: "100%", aspectRatio: `${plan.meta.width} / ${plan.meta.height}` }} />
+							) : (
+								<Player
+									ref={player as unknown as React.Ref<PlayerRef>}
+									initialFrame={startFrame}
+									component={PlanVideo}
+									inputProps={inputProps}
+									durationInFrames={timeline.durationInFrames}
+									fps={timeline.fps}
+									compositionWidth={plan.meta.width}
+									compositionHeight={plan.meta.height}
+									style={{ width: "100%", aspectRatio: `${plan.meta.width} / ${plan.meta.height}` }}
+									controls
+									clickToPlay
+									doubleClickToFullscreen
+									spaceKeyToPlayOrPause={false}
+									// No shared audio tag pool: voice, music and effects premount together and overflow
+									// the default 5 tags, which crashes the preview. Electron allows autoplay, so the pool is not needed.
+									numberOfSharedAudioTags={0}
+									acknowledgeRemotionLicense
+								/>
+							)}
 						</div>
+						{editor && style === "code" && !plan.meta.code ? (
+							<div className="flex items-center gap-2 rounded-lg border bg-subtle/60 px-3 py-2 text-[12.5px]" data-testid="code-missing">
+								<span className="min-w-0 flex-1">This video has no AI design yet, or the AI could not make one. It shows the built-in scenes.</span>
+								<Button size="sm" onClick={() => setCodeOpen(true)} disabled={editor.busy}>
+									<Sparkles />
+									Make the design
+								</Button>
+							</div>
+						) : null}
+						{codeMode ? <CodeErrors errors={codeErrors} onFix={() => setCodeOpen(true)} disabled={!editor || editor.busy} /> : null}
+						{editor && style === "code" ? <CodeDialog draftId={editor.draftId} plan={plan} open={codeOpen} onOpenChange={setCodeOpen} seenErrors={codeErrors} onStarted={editor.onRewriteStarted} /> : null}
 
 						<div className="flex items-center gap-1.5">
 							<Tooltip content="Previous scene  [">

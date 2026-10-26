@@ -1,5 +1,5 @@
 import { plannerChannels as ch } from "@shared/ipc/planner";
-import { cancelPlanner, estimateLook, estimateRegenerate, estimateStep, newLook, planDraft, saveOutline, savePlan, saveSentence, startOutline, startRegenerate, startScript } from "../planner/jobs";
+import { cancelPlanner, estimateCode, estimateLook, startCode, estimateRegenerate, estimateStep, newLook, planDraft, saveOutline, savePlan, saveSentence, startOutline, startRegenerate, startScript } from "../planner/jobs";
 import { estimateTopic, startTopic } from "../ingest/jobs";
 import { handle } from "./register";
 
@@ -21,6 +21,8 @@ export function registerPlannerIpc(): void {
 	handle(ch.regenerate, async (req) => ({ jobId: await startRegenerate(req) }));
 	handle(ch.lookEstimate, (req) => estimateLook(req));
 	handle(ch.newLook, async (req) => ({ look: await newLook(req) }));
+	handle(ch.codeEstimate, (req) => estimateCode(req));
+	handle(ch.newCode, async (req) => ({ jobId: await startCode(req) }));
 	handle(ch.topicEstimate, (req) => estimateTopic(req));
 	handle(ch.topicStart, async (req) => ({ jobId: await startTopic(req) }));
 	handle(ch.saveSentence, ({ draftId, sentenceId, text }) => {

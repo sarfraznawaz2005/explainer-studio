@@ -91,7 +91,8 @@ function addUsage(a: CallUsage, b: CallUsage): CallUsage {
 	};
 }
 
-type Check<T> = { ok: true; value: T } | { ok: false; problems: string[] };
+/** The result of checking one reply: the value, or the problems to send back. */
+export type Check<T> = { ok: true; value: T } | { ok: false; problems: string[] };
 
 function check<S extends z.ZodType>(schema: S, text: string): Check<z.output<S>> {
 	let raw: unknown;
@@ -104,14 +105,27 @@ function check<S extends z.ZodType>(schema: S, text: string): Check<z.output<S>>
 	return r.success ? { ok: true, value: r.data } : { ok: false, problems: describeIssues(r.error) };
 }
 
+export type CheckedRequest<T> = {
+	system: string;
+	prompt: string;
+	images?: ImageInput[];
+	/** Checks one reply (may be slow: a test draw). `attempt` starts at 1. */
+	check: (reply: TextRunResult, attempt: number) => Promise<Check<T>> | Check<T>;
+	/** The repair message for a reply with problems. */
+	repair: (problems: string[]) => string;
+	/** Repair rounds after the first try. 0 disables repair. */
+	maxRepairs?: number;
+	/** The error message after the last round. */
+	failure?: (tries: number, problems: string[]) => string;
+};
+
 /**
- * Asks for a value that matches `schema`. Returns it, or throws StructuredOutputError
- * after the last repair round. Errors from the model call itself (network, auth,
- * cancel) are not repaired: they are rethrown at once.
+ * Asks, checks the reply with `check`, and sends the problems back for a fixed
+ * reply, up to `maxRepairs` times. Errors from the model call itself (network,
+ * auth, cancel) are not repaired: they are rethrown at once.
  */
-export async function generateStructured<S extends z.ZodType>(run: TurnRunner, req: StructuredRequest<S>): Promise<StructuredResult<z.output<S>>> {
+export async function generateChecked<T>(run: TurnRunner, req: CheckedRequest<T>): Promise<StructuredResult<T>> {
 	const maxRepairs = Math.max(0, req.maxRepairs ?? DEFAULT_MAX_REPAIRS);
-	const system = `${req.system.trim()}\n\n${jsonInstructions(req.schema)}`;
 	const messages: ChatMessage[] = [{ role: "user", content: req.prompt, images: req.images }];
 	let usage: CallUsage = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 };
 	let costUsd: number | undefined;
@@ -119,25 +133,32 @@ export async function generateStructured<S extends z.ZodType>(run: TurnRunner, r
 	let lastText = "";
 
 	for (let attempt = 1; attempt <= maxRepairs + 1; attempt++) {
-		const r = await run({ system, messages: [...messages], attempt });
+		const r = await run({ system: req.system, messages: [...messages], attempt });
 		usage = addUsage(usage, r.usage);
 		if (r.costUsd !== undefined) costUsd = (costUsd ?? 0) + r.costUsd;
 		lastText = r.text;
-		const c = check(req.schema, r.text);
+		const c = await req.check(r, attempt);
 		if (c.ok) return { value: c.value, attempts: attempt, usage, costUsd };
 		problems = c.problems;
-		messages.push(
-			{ role: "assistant", content: r.text },
-			{
-				role: "user",
-				content: `Your reply did not match the required JSON Schema. Problems:\n${problems.map((p) => `- ${p}`).join("\n")}\n\nReply again with the complete, corrected JSON only.`,
-			},
-		);
+		messages.push({ role: "assistant", content: r.text }, { role: "user", content: req.repair(problems) });
 	}
-	throw new StructuredOutputError(
-		`The AI reply did not match the expected format after ${maxRepairs + 1} tries. First problem: ${problems[0] ?? "unknown"}`,
-		maxRepairs + 1,
-		problems,
-		lastText,
-	);
+	const tries = maxRepairs + 1;
+	throw new StructuredOutputError(req.failure?.(tries, problems) ?? `The AI reply was not usable after ${tries} tries. First problem: ${problems[0] ?? "unknown"}`, tries, problems, lastText);
+}
+
+/**
+ * Asks for a value that matches `schema`. Returns it, or throws StructuredOutputError
+ * after the last repair round. Errors from the model call itself (network, auth,
+ * cancel) are not repaired: they are rethrown at once.
+ */
+export function generateStructured<S extends z.ZodType>(run: TurnRunner, req: StructuredRequest<S>): Promise<StructuredResult<z.output<S>>> {
+	return generateChecked(run, {
+		system: `${req.system.trim()}\n\n${jsonInstructions(req.schema)}`,
+		prompt: req.prompt,
+		images: req.images,
+		maxRepairs: req.maxRepairs,
+		check: (r) => check(req.schema, r.text),
+		repair: (problems) => `Your reply did not match the required JSON Schema. Problems:\n${problems.map((p) => `- ${p}`).join("\n")}\n\nReply again with the complete, corrected JSON only.`,
+		failure: (tries, problems) => `The AI reply did not match the expected format after ${tries} tries. First problem: ${problems[0] ?? "unknown"}`,
+	});
 }

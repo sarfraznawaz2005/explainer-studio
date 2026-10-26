@@ -16,7 +16,8 @@ export default defineConfig({
 	renderer: {
 		root: resolve("src/renderer"),
 		resolve: { alias: { ...shared, "@renderer": resolve("src/renderer/src"), "@video": resolve("video/src") } },
-		build: { rollupOptions: { input: resolve("src/renderer/index.html") } },
+		// code-preview.html: the sandbox page for AI video code (served by es-preview://, see src/main/app/preview-protocol.ts).
+		build: { rollupOptions: { input: { index: resolve("src/renderer/index.html"), "code-preview": resolve("src/renderer/code-preview.html") } } },
 		plugins: [react(), tailwindcss()],
 	},
 });

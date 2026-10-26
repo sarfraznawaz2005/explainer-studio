@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { BrandStamp } from "../brand";
+import { VideoCode } from "./code";
 import { LookRecipe } from "./look";
 import { SCENE_PROPS } from "./scene-props";
 
@@ -7,7 +8,8 @@ export * from "./scene-props";
 
 /**
  * The VideoPlan: one JSON document per draft. Written by the AI, edited by the
- * user, rendered by Remotion. Pure data: nothing in a plan is ever executed.
+ * user, rendered by Remotion. Pure data, with one exception: meta.code (the "code"
+ * style) is AI-written video code. It is checked by compileCode and runs only in a sandbox.
  * See PLAN.md section 7.
  */
 
@@ -102,11 +104,11 @@ export type PropsOf<T extends SceneType> = Extract<Scene, { type: T }>["props"];
 
 /* ---------- Plan ---------- */
 
-export const STYLE_IDS = ["clean", "chalkboard", "paper", "blueprint", "neon", "cartoon", "academic", "brand", "free"] as const;
+export const STYLE_IDS = ["clean", "chalkboard", "paper", "blueprint", "neon", "cartoon", "academic", "brand", "free", "code"] as const;
 export const StyleId = z.enum(STYLE_IDS);
 export type StyleId = z.infer<typeof StyleId>;
 /** Style names shown to the user. */
-export const STYLE_LABELS: Record<StyleId, string> = { clean: "Clean", chalkboard: "Chalkboard", paper: "Paper", blueprint: "Blueprint", neon: "Neon", cartoon: "Cartoon", academic: "Academic", brand: "Brand", free: "AI free-form" };
+export const STYLE_LABELS: Record<StyleId, string> = { clean: "Clean", chalkboard: "Chalkboard", paper: "Paper", blueprint: "Blueprint", neon: "Neon", cartoon: "Cartoon", academic: "Academic", brand: "Brand", free: "AI look", code: "AI free-form" };
 
 export const Chapter = z.object({ id, title: text(120), goal: z.string().max(300).optional(), scenes: z.array(Scene).min(1).max(60) });
 export type Chapter = z.infer<typeof Chapter>;
@@ -128,6 +130,8 @@ export const PlanMeta = z.object({
 	style: StyleId.default("clean"),
 	/** The "free" style's recipe (colours, fonts, background, motion), designed by the AI for this video. */
 	look: LookRecipe.optional(),
+	/** The "code" style's video code, written by the AI for this video. Missing: the video uses the built-in scenes. */
+	code: VideoCode.optional(),
 	voice: z.string().max(64).optional(),
 	fps: z.union([z.literal(30), z.literal(60)]).default(30),
 	width: z.number().int().min(320).max(3840).default(1920),

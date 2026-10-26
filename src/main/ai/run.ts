@@ -27,7 +27,7 @@ export async function runModelText(model: LanguageModel, opts: Omit<TextRunOpts,
 		abortSignal: opts.abortSignal,
 		maxRetries: 2,
 	});
-	return { text: r.text, usage: fromAiUsage(r.usage) };
+	return { text: r.text, usage: fromAiUsage(r.usage), cutOff: r.finishReason === "length" };
 }
 
 /** One text turn on any provider: the Agent SDK path for Claude Code, the AI SDK for the rest. */

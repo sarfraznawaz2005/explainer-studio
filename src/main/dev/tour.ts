@@ -12,6 +12,7 @@ import { runAssetsTest } from "./assets-test";
 import { runCreatorTest } from "./creator-test";
 import { runEditTest } from "./edit-test";
 import { runVideoTest } from "./video-test";
+import { runCodeTest } from "./code-test";
 
 /**
  * Development aids. Never active in a packaged build.
@@ -48,6 +49,8 @@ export function attachDevAids(win: BrowserWindow): void {
 	if (editDir) win.webContents.once("did-finish-load", () => void runEditTest(win, editDir));
 	const creatorDir = process.env.EXPLAINER_CREATOR_TEST;
 	if (creatorDir) win.webContents.once("did-finish-load", () => void runCreatorTest(win, creatorDir));
+	const codeDir = process.env.EXPLAINER_CODE_TEST;
+	if (codeDir) win.webContents.once("did-finish-load", () => void runCodeTest(win, codeDir));
 	if (process.env.EXPLAINER_SELFTEST) runSelfTest(win, process.env.EXPLAINER_SELFTEST);
 	// EXPLAINER_SNAPSHOT=<file.png>: one picture of the first screen as it opens (theme untouched), then quit.
 	const snap = process.env.EXPLAINER_SNAPSHOT;

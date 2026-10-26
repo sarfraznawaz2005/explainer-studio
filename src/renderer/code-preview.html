@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="UTF-8" />
+		<!-- The Content-Security-Policy comes as a header from es-preview:// (see src/main/app/preview-protocol.ts). -->
+		<title>Video preview</title>
+		<style>
+			/* Same box sizing as the app window and the render page, so the check measures what the video shows. */
+			*,
+			*::before,
+			*::after {
+				box-sizing: border-box;
+			}
+			html,
+			body,
+			#root {
+				margin: 0;
+				width: 100%;
+				height: 100%;
+				background: #000;
+				overflow: hidden;
+			}
+		</style>
+	</head>
+	<body>
+		<div id="root"></div>
+		<script type="module" src="./src/code-preview/main.tsx"></script>
+	</body>
+</html>

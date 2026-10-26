@@ -22,7 +22,9 @@ import { stopRenderWorker } from "./render/manager";
 import { stopVoice } from "./voice";
 import { cancelAllNarration } from "./voice/narration-jobs";
 import { appFolders } from "./app/folders";
-import { handleMediaProtocol, registerMediaScheme } from "./app/media-protocol";
+import { handleMediaProtocol, registerAppSchemes } from "./app/media-protocol";
+import { handlePreviewProtocol } from "./app/preview-protocol";
+import { closeCodeChecker } from "./app/code-check";
 
 // Development builds only: end-to-end tests run against their own data folder, never the user's.
 if (!app.isPackaged && process.env.EXPLAINER_USER_DATA) app.setPath("userData", process.env.EXPLAINER_USER_DATA);
@@ -31,7 +33,7 @@ if (!app.isPackaged && process.env.EXPLAINER_USER_DATA) app.setPath("userData", 
 if (!app.requestSingleInstanceLock()) {
 	app.quit();
 } else {
-	registerMediaScheme();
+	registerAppSchemes();
 	// Windows shows notifications under this id (matches the window's app id).
 	if (process.platform === "win32") app.setAppUserModelId(app.isPackaged ? "com.sarfraz.explainerstudio" : "com.sarfraz.explainerstudio.dev");
 	app.on("second-instance", () => {
@@ -59,6 +61,7 @@ if (!app.requestSingleInstanceLock()) {
 		}
 		initTheme();
 		handleMediaProtocol(() => appFolders());
+		handlePreviewProtocol();
 		registerAppIpc();
 		registerRenderIpc();
 		registerAiIpc();
@@ -89,6 +92,7 @@ if (!app.requestSingleInstanceLock()) {
 		stopVoice();
 		cancelAllIngest();
 		cancelAllPlanner();
+		closeCodeChecker();
 		closeDatabase();
 	});
 

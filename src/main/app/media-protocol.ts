@@ -3,15 +3,19 @@ import { createReadStream } from "node:fs";
 import { stat } from "node:fs/promises";
 import { Readable } from "node:stream";
 import { MEDIA_SCHEME, mediaPath, mediaType, type MediaRoots } from "./media-url";
+import { PREVIEW_SCHEME } from "./preview-protocol";
 
 /**
  * es-media:// serves voice clips and library files to the preview.
  * Read-only, GET and HEAD only. The URL rules live in media-url.ts.
  */
 
-/** Must run before the app is ready. */
-export function registerMediaScheme(): void {
-	protocol.registerSchemesAsPrivileged([{ scheme: MEDIA_SCHEME, privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true, corsEnabled: true } }]);
+/** Registers es-media:// and es-preview:// (see preview-protocol.ts) in one call. Must run before the app is ready. */
+export function registerAppSchemes(): void {
+	protocol.registerSchemesAsPrivileged([
+		{ scheme: MEDIA_SCHEME, privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true, corsEnabled: true } },
+		{ scheme: PREVIEW_SCHEME, privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } },
+	]);
 }
 
 const HEADERS = { "Accept-Ranges": "bytes", "Cache-Control": "no-cache", "Access-Control-Allow-Origin": "*", "X-Content-Type-Options": "nosniff" };

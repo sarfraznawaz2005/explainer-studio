@@ -56,6 +56,8 @@ export const PlanSettings = z.object({
 	targetMinutes: z.number().min(0.5).max(180).nullable().default(null),
 	voice: z.string().regex(/^[a-z]{2}_[a-z0-9]{1,24}$/).optional(),
 	style: z.union([StyleId, z.literal("auto")]).default("auto"),
+	/** "code" style: what the design should be like, in the user's own words. */
+	styleWish: z.string().trim().max(600).optional(),
 	/** Before the script: find free photos of real people, places and things on the web (Wikidata, Openverse, NASA). */
 	webPictures: z.boolean().default(true),
 });
@@ -152,7 +154,7 @@ export type QualityReport = z.infer<typeof QualityReport>;
 /* ---------- Cost and time estimate ---------- */
 
 /** outline and script run from the wizard; scene and chapter are Studio rewrites of one part; research writes material from a topic. */
-export const PlanStep = z.enum(["outline", "script", "scene", "chapter", "research", "pictures", "look"]);
+export const PlanStep = z.enum(["outline", "script", "scene", "chapter", "research", "pictures", "look", "code"]);
 export type PlanStep = z.infer<typeof PlanStep>;
 
 export const Estimate = z.object({

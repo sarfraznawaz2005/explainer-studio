@@ -43,6 +43,8 @@ export interface TextRunResult {
 	usage: CallUsage;
 	/** Set when the provider reports the cost itself (Claude Code). */
 	costUsd?: number;
+	/** The model stopped at the output token limit: the text is cut off. */
+	cutOff?: boolean;
 }
 
 export interface ProviderAdapter {
