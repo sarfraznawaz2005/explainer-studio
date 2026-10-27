@@ -9,6 +9,7 @@ import { PauseScene, QuizScene } from "../scenes/engage-scenes";
 import { SceneProvider } from "../scenes/kit";
 import { CounterScene, EquationScene, GraphScene } from "../scenes/math-scenes";
 import { DiagramScene, FigureScene, SvgScene } from "../scenes/media-scenes";
+import { ChatScene, CtaScene, DeviceScene, LogoScene, LowerThirdScene, SocialScene } from "../scenes/promo-scenes";
 import { CycleScene, MindmapScene, ProsConsScene, TreeScene, VennScene } from "../scenes/shape-scenes";
 import { AnalogyScene, DialogueScene, MapScene, TimelineScene } from "../scenes/story-scenes";
 import { GlossaryScene, KineticScene, QuoteScene, SummaryScene } from "../scenes/structure-scenes";
@@ -18,6 +19,10 @@ import { styleFor, type BrandColors, type VisualStyle } from "../styles/styles";
 import { BrandIntro, BrandOutro, Watermark } from "./BrandLayer";
 import { CodeGuard, loadVideoCode, lockPage, resetLoops, setFigureBase, useCodeFonts, videoCodeAllowed, type VideoComponent } from "../code/runtime";
 import { codeVideoData } from "../../../src/shared/plan/code-data";
+import { isNarrow, isPhone } from "../../../src/shared/plan/frame";
+import { captionBand, captionGroups } from "../../../src/shared/plan/captions";
+import { isRtl } from "../../../src/shared/plan/code";
+import { CaptionLayer, CaptionSpace } from "./Captions";
 import { waitOnce } from "./wait-once";
 import { brandFontStack, type BrandStamp } from "../../../src/shared/brand";
 import type { FigureMeta } from "../../../src/shared/source";
@@ -72,6 +77,12 @@ export const SCENES: Record<SceneType, ComponentType<never>> = {
 	figure: FigureScene,
 	pause: PauseScene,
 	quiz: QuizScene,
+	lowerthird: LowerThirdScene,
+	device: DeviceScene,
+	chat: ChatScene,
+	social: SocialScene,
+	cta: CtaScene,
+	logo: LogoScene,
 	svg: SvgScene,
 };
 
@@ -97,11 +108,11 @@ export function useFonts(style: VisualStyle, extra?: string) {
 
 function ChapterProgress({ timeline, style }: { timeline: Timeline; style: VisualStyle }) {
 	const frame = useCurrentFrame();
-	// Vertical: above the phone app's captions and buttons at the bottom.
+	// Phones (9:16): above the app's captions and buttons at the bottom. Narrow frames: narrower sides.
 	const { width, height } = useVideoConfig();
-	const tall = height > width;
+	const side = isNarrow(width, height) ? 72 : 140;
 	return (
-		<div style={{ position: "absolute", left: tall ? 72 : 140, right: tall ? 72 : 140, bottom: tall ? 290 : 44, display: "flex", gap: 10, opacity: 0.9 }}>
+		<div style={{ position: "absolute", left: side, right: side, bottom: isPhone(width, height) ? 290 : 44, display: "flex", gap: 10, opacity: 0.9 }}>
 			{timeline.chapters.map((c) => {
 				const p = interpolate(frame, [c.from, c.from + c.durationInFrames], [0, 1], { extrapolateLeft: "clamp", extrapolateRight: "clamp" });
 				return (
@@ -261,9 +272,13 @@ export function PlanVideo({ plan: input, style: override, audioBase, soundtrack,
 	useEffect(() => {
 		if (code && !code.ok) onCodeError?.(code.problems.join("\n"), -1);
 	}, [code, onCodeError]);
+	const captions = "plan" in parsed ? parsed.plan.meta.captions : "off";
+	const groups = useMemo(() => ("plan" in parsed && captions !== "off" ? captionGroups(parsed.timeline, parsed.plan.meta.width, parsed.plan.meta.height) : []), [parsed, captions]);
 	if ("error" in parsed) return <ProblemCard message={`This plan has a problem:\n${parsed.error}`} />;
 	const { timeline } = parsed;
 	const Background = style.Background;
+	const { width, height } = parsed.plan.meta;
+	const captionLayer = captions !== "off" ? <CaptionLayer groups={groups} kind={captions} style={style} rtl={isRtl(parsed.plan.meta.language)} /> : null;
 	if (code?.ok)
 		return (
 			<AbsoluteFill style={{ background: style.bg }}>
@@ -276,22 +291,27 @@ export function PlanVideo({ plan: input, style: override, audioBase, soundtrack,
 						))
 					: null}
 				{soundtrack ? <SoundLayer st={soundtrack} fps={timeline.fps} /> : null}
+				{captionLayer}
 				{stamp ? <BrandLayer b={stamp} timeline={timeline} dark={style.dark} /> : null}
 			</AbsoluteFill>
 		);
 	return (
 		<AbsoluteFill style={{ background: style.bg }}>
 			<Background />
-			{timeline.scenes.map((t) => (
-				<Sequence key={t.scene.id} from={t.from} durationInFrames={t.durationInFrames} name={`${t.scene.type}: ${t.scene.id}`}>
-					<SceneProvider value={{ timed: t, style, figureBase, figureMeta }}>
-						<SceneView scene={t.scene} />
-					</SceneProvider>
-					{audioBase ? <SceneVoice timed={t} audioBase={audioBase} fps={timeline.fps} /> : null}
-				</Sequence>
-			))}
+			{/* Scenes keep their content above the captions. */}
+			<CaptionSpace.Provider value={captions !== "off" ? captionBand(captions, width, height) : null}>
+				{timeline.scenes.map((t) => (
+					<Sequence key={t.scene.id} from={t.from} durationInFrames={t.durationInFrames} name={`${t.scene.type}: ${t.scene.id}`}>
+						<SceneProvider value={{ timed: t, style, figureBase, figureMeta }}>
+							<SceneView scene={t.scene} />
+						</SceneProvider>
+						{audioBase ? <SceneVoice timed={t} audioBase={audioBase} fps={timeline.fps} /> : null}
+					</Sequence>
+				))}
+			</CaptionSpace.Provider>
 			{soundtrack ? <SoundLayer st={soundtrack} fps={timeline.fps} /> : null}
 			{timeline.chapters.length > 1 ? <ChapterProgress timeline={timeline} style={style} /> : null}
+			{captionLayer}
 			{stamp ? <BrandLayer b={stamp} timeline={timeline} dark={style.dark} /> : null}
 		</AbsoluteFill>
 	);

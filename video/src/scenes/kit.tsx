@@ -1,5 +1,7 @@
 import { createContext, useContext, type CSSProperties, type ReactNode } from "react";
 import { AbsoluteFill, interpolate, spring, useCurrentFrame, useVideoConfig } from "remotion";
+import { isNarrow, shapeOf, type FrameShape } from "../../../src/shared/plan/frame";
+import { CaptionSpace } from "../plan/Captions";
 import { cueFrame, msToFrames, type TimedScene } from "../../../src/shared/plan/timing";
 import type { FigureMeta } from "../../../src/shared/source";
 import { DEFAULT_MOTION, glow, outline, texture, type Motion, type VisualStyle } from "../styles/styles";
@@ -48,31 +50,42 @@ export function useActiveCue(action: "focus" | "highlight"): number {
 	return active;
 }
 
-/**
- * Frame shape. Vertical (9:16) videos for Shorts, TikTok and Reels keep clear of the
- * phone's own buttons and captions: more room at the top and bottom, narrower sides.
- */
-export const isVertical = (w: number, h: number) => h > w;
-
 /** The frame a scene is laid out for, when it differs from the composition (a scene drawn small inside a thumbnail). */
 const FrameSize = createContext<{ width: number; height: number } | null>(null);
 export const FrameSizeProvider = FrameSize.Provider;
-const PAD = { wide: { top: 96, side: 140, bottom: 96 }, tall: { top: 210, side: 72, bottom: 330 } } as const;
+/**
+ * Safe margins by frame shape. Vertical (9:16) videos for Shorts, TikTok and Reels
+ * keep clear of the phone app's own bar, buttons and captions: more room at the
+ * top and bottom, narrower sides. Square and portrait feed videos need only a margin.
+ */
+const PAD: Record<FrameShape, { top: number; side: number; bottom: number }> = {
+	landscape: { top: 96, side: 140, bottom: 96 },
+	vertical: { top: 210, side: 72, bottom: 330 },
+	square: { top: 80, side: 72, bottom: 96 },
+	portrait: { top: 96, side: 72, bottom: 120 },
+};
 
 export function useLayout() {
 	const config = useVideoConfig();
 	const { width, height } = useContext(FrameSize) ?? config;
-	const vertical = isVertical(width, height);
-	const pad = vertical ? PAD.tall : PAD.wide;
+	/** Narrow frames (9:16, 4:5, 1:1) use the stacked layouts. */
+	const vertical = isNarrow(width, height);
+	const shape = shapeOf(width, height);
+	// With captions on, the content stays above their band (and a small gap).
+	const band = useContext(CaptionSpace);
+	const base = PAD[shape];
+	const pad = band ? { ...base, bottom: Math.max(base.bottom, band.bottom + band.height + 16) } : base;
 	const contentW = width - pad.side * 2;
 	const innerH = height - pad.top - pad.bottom;
 	return {
 		vertical,
+		/** The frame shape: landscape, vertical (9:16), square or portrait (4:5). */
+		shape,
 		pad,
 		/** Content box width inside SceneFrame. */
 		contentW,
-		/** Height left for the scene's drawing, under a heading or without one (wide frames: the long-standing 720 / 880). */
-		stageH: (heading?: string) => (vertical ? (heading ? innerH - 200 : innerH) : heading ? 720 : 880),
+		/** Height left for the scene's drawing, under a heading or without one (wide frames: the long-standing 720 / 880, less the caption band). */
+		stageH: (heading?: string) => (vertical ? (heading ? innerH - 200 : innerH) : (heading ? 720 : 880) - (pad.bottom - base.bottom)),
 	};
 }
 

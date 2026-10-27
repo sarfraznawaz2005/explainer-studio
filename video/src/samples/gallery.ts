@@ -199,6 +199,51 @@ export const GALLERY_SCENES: SceneInput[] = [
 		narration: say("Quick quiz. What gas do plants give out?", "It is oxygen."),
 	},
 	{
+		id: "lowerthird",
+		type: "lowerthird",
+		props: { name: "Dr. Amina Okafor", role: "Plant biologist", statement: "Every leaf is a tiny solar factory." },
+		narration: say("Doctor Amina Okafor studies plants.", "She calls every leaf a tiny solar factory."),
+	},
+	{
+		id: "device",
+		type: "device",
+		props: { heading: "Track your garden", device: "phone", items: ["Water the basil", "Move the fern to light", "Feed the tomatoes"] },
+		narration: say("The garden app keeps a simple list.", "Water the basil.", "Move the fern into the light.", "Feed the tomatoes."),
+	},
+	{
+		id: "chat",
+		type: "chat",
+		props: {
+			heading: "Ask the gardener",
+			title: "Garden help",
+			messages: [
+				{ from: "me", text: "Why are my leaves turning yellow?" },
+				{ from: "them", text: "Too little light, most of the time." },
+				{ from: "me", text: "So a sunnier window?" },
+				{ from: "them", text: "Yes, and water a little less." },
+			],
+		},
+		narration: say("A reader asks why the leaves turn yellow.", "Most of the time, the plant gets too little light.", "So a sunnier window helps.", "And a little less water."),
+	},
+	{
+		id: "social",
+		type: "social",
+		props: { author: "Maya Lin", handle: "@mayagrows", text: "Moved my plants to the east window and they doubled in a month. Light really is food!", stars: 5, likes: 12400, shares: 860 },
+		narration: say("Maya moved her plants to an east window.", "They doubled in a month. Light really is food."),
+	},
+	{
+		id: "cta",
+		type: "cta",
+		props: { headline: "Grow greener plants this week", points: ["Free plant guide", "5-minute lessons"], action: "Start learning", detail: "example.com/plants" },
+		narration: say("Grow greener plants this week.", "Get the free guide and short lessons.", "Start learning today."),
+	},
+	{
+		id: "logo",
+		type: "logo",
+		props: { name: "Leafy Lab", tagline: "Science you can grow" },
+		narration: say("Leafy Lab. Science you can grow."),
+	},
+	{
 		id: "svg",
 		type: "svg",
 		props: {

@@ -115,3 +115,51 @@ export default function Video({ video }: { video: VideoData }) {
   );
 }
 `;
+
+/**
+ * Hard-to-read text, one kind per scene, for the test draw's checks:
+ * scene 1 overlap, edge and small text; scene 2 cut-off text and low contrast;
+ * scene 3 a long sentence that flashes by. Every scene then holds still.
+ */
+export const LAYOUT_ISSUES_CODE = `import { AbsoluteFill, Sequence, useCurrentFrame } from "remotion";
+
+function Bad({ index }: { index: number }) {
+  const frame = useCurrentFrame();
+  const k = index % 3;
+  if (k === 0)
+    return (
+      <AbsoluteFill style={{ background: "#ffffff" }}>
+        <div style={{ position: "absolute", left: 200, top: 300, fontSize: 60, color: "#000000", whiteSpace: "nowrap" }}>Overlapping words one</div>
+        <div style={{ position: "absolute", left: 210, top: 312, fontSize: 60, color: "#000000", whiteSpace: "nowrap" }}>Second line on top</div>
+        <div style={{ position: "absolute", left: 2, top: 700, fontSize: 40, color: "#000000" }}>Edge text here</div>
+        <div style={{ position: "absolute", left: 600, top: 900, fontSize: 12, color: "#000000" }}>tiny print below</div>
+      </AbsoluteFill>
+    );
+  if (k === 1)
+    return (
+      <AbsoluteFill style={{ background: "#ffffff" }}>
+        <div style={{ position: "absolute", left: 300, top: 300, width: 200, height: 70, overflow: "hidden" }}>
+          <div style={{ fontSize: 50, whiteSpace: "nowrap", color: "#000000" }}>This text is cut off by its box</div>
+        </div>
+        <div style={{ position: "absolute", left: 300, top: 600, fontSize: 60, color: "#eeeeee" }}>Pale text on white</div>
+      </AbsoluteFill>
+    );
+  return (
+    <AbsoluteFill style={{ background: "#202020" }}>
+      {frame >= 30 && frame < 33 ? <div style={{ position: "absolute", left: 200, top: 400, fontSize: 60, color: "#ffffff" }}>A long sentence that flashes by far too fast to read</div> : null}
+    </AbsoluteFill>
+  );
+}
+
+export default function Video({ video }: { video: VideoData }) {
+  return (
+    <AbsoluteFill>
+      {video.scenes.map((s) => (
+        <Sequence key={s.id} from={s.from} durationInFrames={s.durationInFrames}>
+          <Bad index={s.index} />
+        </Sequence>
+      ))}
+    </AbsoluteFill>
+  );
+}
+`;

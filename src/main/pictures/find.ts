@@ -56,10 +56,17 @@ export function needsSystem(): string {
 	].join("\n");
 }
 
+/** What photos suit the video's shape, for the photo planner. */
+const PHOTO_SHAPE: Record<VideoFormat, string> = {
+	landscape: "",
+	vertical: " Vertical (9:16): portrait photos fit best.",
+	portrait: " Portrait (4:5): portrait photos fit best.",
+	square: " Square (1:1): square or nearly square photos fit best.",
+};
+
 export function needsPrompt(outline: Outline, s: PlanSettings, mine: Pick<Figure, "caption">[], count: number): string {
-	const tall = s.format === "vertical";
 	return [
-		`Video: ${outline.title}${outline.subtitle ? ` (${outline.subtitle})` : ""}. Audience: ${s.level}. Length: ${s.targetMinutes ? lengthLabel(s.targetMinutes) : "as needed"}.${tall ? " Vertical (9:16): portrait photos fit best." : ""}`,
+		`Video: ${outline.title}${outline.subtitle ? ` (${outline.subtitle})` : ""}. Audience: ${s.level}. Length: ${s.targetMinutes ? lengthLabel(s.targetMinutes) : "as needed"}.${PHOTO_SHAPE[s.format]}`,
 		`At most ${count} photos.`,
 		"",
 		"Chapters:",
@@ -117,12 +124,14 @@ export type FindDeps = WebDeps & {
 	format?: VideoFormat;
 };
 
-/** How well a picture's shape suits the video: 2 same shape, 1 square-ish, 0 the other way round. */
+/** How well a picture's shape suits the video: 2 same shape, 1 square-ish (or any, for a square video), 0 the other way round. */
 export function shapeScore(c: Pick<Candidate, "width" | "height">, format: VideoFormat): number {
 	if (!c.width || !c.height) return 1;
 	const r = c.width / c.height;
-	if (r > 0.83 && r < 1.2) return 1;
-	return (format === "vertical") === r < 1 ? 2 : 0;
+	const squarish = r > 0.83 && r < 1.2;
+	if (format === "square") return squarish ? 2 : 1;
+	if (squarish) return 1;
+	return (format === "landscape") === r > 1 ? 2 : 0;
 }
 
 /** Up to 6 candidates for one need: Wikidata's photo of the named subject first, then searches. */
@@ -145,7 +154,7 @@ export async function candidatesFor(need: PictureNeed, deps: FindDeps, exclude: 
 			deps.log?.(`wikidata "${need.entity}": ${(err as Error).message}`);
 		}
 	}
-	const aspect = deps.format === "vertical" ? "tall" : "wide";
+	const aspect = deps.format === "square" ? "square" : deps.format === "vertical" || deps.format === "portrait" ? "tall" : "wide";
 	for (const q of need.queries) {
 		if (out.length >= 6) break;
 		try {

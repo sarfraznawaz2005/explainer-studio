@@ -322,6 +322,56 @@ export const SvgAnimation = z.object({
 	ease: z.enum(["ease", "linear", "spring"]).default("ease"),
 });
 export type SvgAnimation = z.infer<typeof SvgAnimation>;
+
+/* ---------- Promo and social ---------- */
+
+/** A name bar at the bottom (who is speaking, or whose words these are), with an optional big statement. */
+export const LowerThirdProps = z.object({
+	name: text(60),
+	role: z.string().max(80).optional(),
+	statement: z.string().max(160).optional(),
+	side: z.enum(["left", "right"]).default("left"),
+});
+/** A phone or a browser window showing a picture from the source, or a simple app screen with a few items. */
+export const DeviceProps = z.object({
+	heading: Heading,
+	device: z.enum(["phone", "browser"]).default("phone"),
+	/** Browser address bar text ("example.com/app"). */
+	url: z.string().max(60).optional(),
+	figure: FigureFile.optional(),
+	items: z.array(text(80)).max(5).default([]),
+	caption: z.string().max(160).optional(),
+});
+/** A chat, as in a messaging app: messages appear one by one. */
+export const ChatProps = z.object({
+	heading: Heading,
+	/** Who the chat is with, shown in its header. */
+	title: z.string().max(40).optional(),
+	messages: z.array(z.object({ from: z.enum(["me", "them"]), text: text(160) })).min(1).max(8),
+});
+/** A social post or a review card: author, words, stars, likes and shares. */
+export const SocialProps = z.object({
+	author: text(40),
+	handle: z.string().max(30).optional(),
+	text: text(280),
+	stars: z.number().int().min(1).max(5).optional(),
+	likes: z.number().int().min(0).max(100_000_000).optional(),
+	shares: z.number().int().min(0).max(100_000_000).optional(),
+});
+/** The end card: a headline, up to 3 short points, a button and where to go. */
+export const CtaProps = z.object({
+	headline: text(100),
+	action: text(40),
+	detail: z.string().max(120).optional(),
+	points: z.array(text(60)).max(3).default([]),
+});
+/** A logo sting: the mark (a picture from the source, or the name's first letter), the name and a tagline. */
+export const LogoProps = z.object({
+	name: text(60),
+	tagline: z.string().max(100).optional(),
+	figure: FigureFile.optional(),
+});
+
 export const SvgProps = z
 	.object({
 		heading: Heading,
@@ -369,5 +419,11 @@ export const SCENE_PROPS = {
 	figure: FigureProps,
 	pause: PauseProps,
 	quiz: QuizProps,
+	lowerthird: LowerThirdProps,
+	device: DeviceProps,
+	chat: ChatProps,
+	social: SocialProps,
+	cta: CtaProps,
+	logo: LogoProps,
 	svg: SvgProps,
 } as const;

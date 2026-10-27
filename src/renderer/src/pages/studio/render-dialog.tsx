@@ -96,7 +96,7 @@ function RenderDialogBody({ draftId, onClose }: { draftId: string; onClose: () =
 	// The check counts the brand intro and outro only when the saved default adds them.
 	const brandMs = check?.brand ? (check.brand.intro + check.brand.outro) * 1000 : 0;
 	const shownMs = check && settings ? check.durationMs + (settings.brand === check.defaults.brand ? 0 : settings.brand ? brandMs : -brandMs) : 0;
-	const size = settings ? outputSize({ width: 1920, height: 1080 }, settings.resolution) : null;
+	const size = settings && check ? outputSize(check, settings.resolution) : null;
 	const heavy = settings && (settings.resolution === "2160p" || (settings.resolution === "1440p" && settings.fps === 60));
 
 	return (

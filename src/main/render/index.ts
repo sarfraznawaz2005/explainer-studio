@@ -114,6 +114,8 @@ export function renderCheck(draftId: string): RenderCheck {
 	const kit = kitForDraft(s.d);
 	return {
 		title: s.plan.meta.title,
+		width: s.plan.meta.width,
+		height: s.plan.meta.height,
 		durationMs: Math.round((s.timeline.durationInFrames / s.timeline.fps) * 1000),
 		chapters: s.plan.chapters.length,
 		scenes: s.timeline.scenes.length,

@@ -101,6 +101,12 @@ export function revealCount(scene: Scene): number {
 			return scene.props.callouts.length;
 		case "quiz":
 			return scene.props.questions.length;
+		case "device":
+			return scene.props.items.length;
+		case "chat":
+			return scene.props.messages.length;
+		case "cta":
+			return scene.props.points.length;
 		default:
 			return 0;
 	}

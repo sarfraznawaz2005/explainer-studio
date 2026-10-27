@@ -5,7 +5,7 @@ import { join } from "node:path";
 import type { ModelSlot, ProviderKind } from "@shared/ipc/ai";
 import { plannerEvents, type PlanDraft, type PlannerUpdate, type RegenerateTarget } from "@shared/ipc/planner";
 import { VideoPlan } from "@shared/plan/schema";
-import { Outline, PlanSettings, QualityReport, type Estimate, type PlanStep } from "@shared/planner";
+import { formatOf, Outline, PlanSettings, QualityReport, type Estimate, type PlanStep } from "@shared/planner";
 import { Source } from "@shared/source";
 import type { Draft } from "@shared/models";
 import { ai, priceBook } from "../ai";
@@ -163,7 +163,7 @@ function lookBrief(d: Draft, settings: PlanSettings, outline: Outline | null, cu
 		level: settings.level,
 		tone: settings.tone,
 		language: settings.language,
-		vertical: settings.format === "vertical",
+		format: settings.format,
 		avoid: avoidList(current, recentLooks(d.id)),
 		wish,
 	};
@@ -171,7 +171,7 @@ function lookBrief(d: Draft, settings: PlanSettings, outline: Outline | null, cu
 
 /** The draft's settings for a look: saved settings, else what the plan says. */
 function lookSettings(d: Draft, plan: VideoPlan): PlanSettings {
-	return parsed(PlanSettings, d.settings) ?? PlanSettings.parse({ level: plan.meta.level, language: plan.meta.language, format: plan.meta.height > plan.meta.width ? "vertical" : "landscape" });
+	return parsed(PlanSettings, d.settings) ?? PlanSettings.parse({ level: plan.meta.level, language: plan.meta.language, format: formatOf(plan.meta) });
 }
 
 export async function estimateLook(req: { draftId: string; wish?: string }): Promise<Estimate> {
@@ -213,7 +213,7 @@ function recentCodes(exceptId: string): string[] {
 	return out;
 }
 
-function codeBrief(d: Draft, settings: PlanSettings, outline: Outline | null, opts: { wish?: string; current?: VideoCode; seenErrors?: string[] } = {}): CodeBrief {
+function codeBrief(d: Draft, settings: PlanSettings, outline: Outline | null, opts: { wish?: string; current?: VideoCode; seenErrors?: string[]; part?: { id: string; text: string } } = {}): CodeBrief {
 	return {
 		title: outline?.title ?? d.title,
 		level: settings.level,
@@ -223,6 +223,7 @@ function codeBrief(d: Draft, settings: PlanSettings, outline: Outline | null, op
 		avoid: [...(opts.current ? [codeSummary(opts.current)] : []), ...recentCodes(d.id)].slice(0, 4),
 		current: opts.current?.source,
 		seenErrors: opts.seenErrors,
+		part: opts.current ? opts.part : undefined,
 	};
 }
 
@@ -238,27 +239,27 @@ function codeProgress(tell: (p: number, detail: string) => void, from: number, t
 	};
 }
 
-export async function estimateCode(req: { draftId: string; wish?: string; change: boolean }): Promise<Estimate> {
+export async function estimateCode(req: { draftId: string; wish?: string; change: boolean; part?: { id: string; text: string } }): Promise<Estimate> {
 	const d = mustDraft(req.draftId);
 	const plan = parsed(VideoPlan, d.plan);
 	if (!plan) throw new Error("This draft has no script yet.");
 	const current = req.change ? plan.meta.code : undefined;
-	return priced("code", codeCalls(codeBrief(d, lookSettings(d, plan), parsed(Outline, d.outline), { wish: req.wish, current }), plan));
+	return priced("code", codeCalls(codeBrief(d, lookSettings(d, plan), parsed(Outline, d.outline), { wish: req.wish, current, part: req.part }), plan));
 }
 
 /**
  * Writes new video code for a draft (or changes the current code as the wish
  * says) and saves it to the plan. The Studio brings it in as one undo step.
  */
-export async function startCode(req: { draftId: string; wish?: string; change: boolean; seenErrors?: string[]; confirmedCost: boolean }): Promise<string> {
+export async function startCode(req: { draftId: string; wish?: string; change: boolean; part?: { id: string; text: string }; seenErrors?: string[]; confirmedCost: boolean }): Promise<string> {
 	const d = mustDraft(req.draftId);
 	const plan = parsed(VideoPlan, d.plan);
 	if (!plan) throw new Error("This draft has no script yet.");
 	const current = req.change ? plan.meta.code : undefined;
-	const brief = codeBrief(d, lookSettings(d, plan), parsed(Outline, d.outline), { wish: req.wish, current, seenErrors: req.seenErrors });
+	const brief = codeBrief(d, lookSettings(d, plan), parsed(Outline, d.outline), { wish: req.wish, current, seenErrors: req.seenErrors, part: req.part });
 	await checkCost(() => priced("code", codeCalls(brief, plan)), req.confirmedCost);
 	return start(d.id, "code", async (signal, tell) => {
-		tell(0.03, current ? "Changing the design" : "Writing the design");
+		tell(0.03, req.part && current ? "Changing one part of the design" : current ? "Changing the design" : "Writing the design");
 		const code = await writeVideoCode(plannerAiFrom(ai(), d.id, signal), brief, plan, drawFor(d.id), codeProgress(tell, 0.05, 0.97));
 		signal.throwIfAborted();
 		// Into the plan as stored now (the user may have edited texts meanwhile).

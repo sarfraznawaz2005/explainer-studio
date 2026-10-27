@@ -3,7 +3,7 @@ import { readFile, rename, rm, stat } from "node:fs/promises";
 import { basename, extname, join } from "node:path";
 import { PICTURES_MAX, type PicturesState, type PictureView } from "@shared/ipc/pictures";
 import { VideoPlan } from "@shared/plan/schema";
-import { formatOf, type VideoFormat } from "@shared/planner";
+import { formatOf, VideoFormat } from "@shared/planner";
 import { figureMetaOf, Source, type Figure, type FigureMeta } from "@shared/source";
 import type { Draft } from "@shared/models";
 import { appFolders } from "../app/folders";
@@ -52,7 +52,7 @@ export function formatOfDraft(draftId: string): VideoFormat {
 	const d = mustDraft(draftId);
 	const p = VideoPlan.safeParse(d.plan);
 	if (p.success) return formatOf(p.data.meta);
-	return (d.settings as { format?: VideoFormat } | null)?.format === "vertical" ? "vertical" : "landscape";
+	return VideoFormat.catch("landscape").parse((d.settings as { format?: unknown } | null)?.format);
 }
 
 /** How many scenes show each figure file. */

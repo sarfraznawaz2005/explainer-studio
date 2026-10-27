@@ -55,6 +55,9 @@ export type RenderJobView = z.infer<typeof RenderJobView>;
 /** What the render dialog shows before a render starts. */
 export const RenderCheck = z.object({
 	title: z.string(),
+	/** The plan's frame size (the output is scaled from it). */
+	width: z.number(),
+	height: z.number(),
 	durationMs: z.number(),
 	chapters: z.number(),
 	scenes: z.number(),

@@ -3,6 +3,7 @@
  * drawn at 1080×1920 through the real Remotion bundle and headless Chrome.
  * Stills go to tests/__stills__/vertical-*.png for review, plus a contact sheet
  * of all of them (vertical-sheet.png). Runs with `npm run test:render`.
+ * Square (1:1) and portrait (4:5) feed videos get the same, as feed-*.png.
  * Every still must have real content.
  */
 import { bundle } from "@remotion/bundler";
@@ -79,3 +80,34 @@ describe(`vertical scenes (${STYLE})`, () => {
 		writeFileSync(join(OUT, `vertical-${STYLE}-sheet.png`), sheet.toBuffer("image/png"));
 	}, 120_000);
 });
+
+/** Feed videos (square 1:1 and portrait 4:5): one still per scene type and a contact sheet each (feed-*.png). */
+for (const [shape, width, height] of [["square", 1080, 1080], ["portrait", 1080, 1350]] as const) {
+	describe(`${shape} scenes (${STYLE})`, () => {
+		const sized = (plan: VideoPlanInput): VideoPlanInput => ({ ...plan, meta: { ...plan.meta, width, height } });
+		it.each(SCENE_TYPES)("%s", async (type) => {
+			const plan = sized(galleryPlanFor(type));
+			const inputProps = { plan, style: STYLE };
+			const composition = await selectComposition({ serveUrl, id: "Explainer", inputProps, puppeteerInstance: browser, browserExecutable });
+			expect([composition.width, composition.height]).toEqual([width, height]);
+			const file = join(OUT, `feed-${shape}-${STYLE}-${type}.png`);
+			await renderStill({ serveUrl, composition, inputProps, frame: settledFrame(plan), output: file, overwrite: true, puppeteerInstance: browser, browserExecutable, imageFormat: "png" });
+			expect(statSync(file).size, `${file} looks empty`).toBeGreaterThan(30_000);
+		}, 120_000);
+
+		it("contact sheet", async () => {
+			const cols = 8;
+			const w = 270;
+			const h = Math.round((w * height) / width);
+			const sheet = createCanvas(cols * w, Math.ceil(SCENE_TYPES.length / cols) * h);
+			const g = sheet.getContext("2d");
+			for (const [i, t] of SCENE_TYPES.entries()) {
+				g.drawImage(await loadImage(join(OUT, `feed-${shape}-${STYLE}-${t}.png`)), (i % cols) * w, Math.floor(i / cols) * h, w, h);
+				g.fillStyle = "#e11d48";
+				g.font = "bold 18px sans-serif";
+				g.fillText(t, (i % cols) * w + 6, Math.floor(i / cols) * h + 22);
+			}
+			writeFileSync(join(OUT, `feed-${shape}-${STYLE}-sheet.png`), sheet.toBuffer("image/png"));
+		}, 120_000);
+	});
+}

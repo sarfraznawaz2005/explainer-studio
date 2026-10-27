@@ -134,6 +134,25 @@ export function CounterScene({ heading, counters }: PropsOf<"counter">) {
 	);
 }
 
+/**
+ * The width of a formula as KaTeX draws it, in em. Measured in a hidden element
+ * (same CSS and fonts as the scene); 0 when there is no page to measure in.
+ */
+function texWidthEm(tex: string): number {
+	const doc = globalThis.document;
+	if (!doc?.body) return 0;
+	const box = doc.createElement("div");
+	box.className = "es-tex";
+	box.style.cssText = "position:absolute;left:-100000px;top:0;visibility:hidden;white-space:nowrap;font-size:100px";
+	// KaTeX output from a checked formula with trust off, as in EquationLine.
+	box.innerHTML = texHtml(tex);
+	doc.body.appendChild(box);
+	const el = (box.querySelector(".katex") as HTMLElement | null) ?? box;
+	const w = el.getBoundingClientRect().width;
+	box.remove();
+	return w / 100;
+}
+
 function EquationLine({ tex, note, at, current, size, stacked }: { tex: string; note?: string; at: number; current: boolean; size: number; stacked: boolean }) {
 	const s = useStyle();
 	const p = useAppear(at, { damping: 200 });
@@ -171,8 +190,12 @@ export function EquationScene({ heading, steps }: PropsOf<"equation">) {
 	// Long formulas next to notes get a smaller size so both fit on the line.
 	const base = steps.length > 5 ? 40 : steps.length > 3 ? 48 : 58;
 	const { vertical, contentW } = useLayout();
-	// Tall frames: a formula has the full width but it is narrow, so long ones get smaller (about 0.2em per TeX source character; commands draw little).
-	const size = vertical ? Math.max(34, Math.min(Math.round(base * 1.3), Math.floor((contentW - 40) / (0.2 * longest)))) : notes && longest > 50 ? Math.round(base * 0.82) : base;
+	// The widest formula, measured as drawn (in em). A formula cannot wrap, so the size makes it fit:
+	// tall frames give it the full width (bar and gap aside); wide frames leave room for the notes column.
+	const widest = Math.max(...steps.map((st) => texWidthEm(st.tex)));
+	const room = vertical ? contentW - 40 : contentW - 8 - 80 - (notes ? 260 : 0);
+	const fit = widest > 0 ? Math.floor((room * 0.97) / widest) : Infinity;
+	const size = vertical ? Math.max(28, Math.min(Math.round(base * 1.3), fit)) : Math.max(28, Math.min(notes && longest > 50 ? Math.round(base * 0.82) : base, fit));
 	return (
 		<SceneFrame heading={heading} center={!heading}>
 			<style>{".es-tex .katex-display{margin:0;text-align:left}.es-tex .katex-display>.katex{text-align:left}"}</style>
@@ -340,15 +363,32 @@ export function GraphScene({ heading, functions, x, y, points, tracer, xLabel, y
 							</g>
 						);
 					})}
-					{tracer && frame >= traceFrom && Number.isFinite(ty) && ty >= y0 && ty <= y1 ? (
-						<g>
-							<circle cx={sx(tx)} cy={sy(ty)} r={16} fill={colors[lastFn]} opacity={0.25} />
-							<circle cx={sx(tx)} cy={sy(ty)} r={9} fill={colors[lastFn]} />
-							<text x={sx(tx)} y={sy(ty) + (sy(ty) < T + 60 ? 52 : -26)} textAnchor="middle" fontSize={26} fill={s.text} fontWeight={600}>
-								({label(tx)}, {label(ty)})
-							</text>
-						</g>
-					) : null}
+					{tracer && frame >= traceFrom && Number.isFinite(ty) && ty >= y0 && ty <= y1
+						? (() => {
+								// The moving label goes above the point, or below it near the top or where a curve's name is.
+								const text = `(${label(tx)}, ${label(ty)})`;
+								const half = (text.length * 26 * 0.55) / 2;
+								const nameBoxes = functions.flatMap((f, i) => {
+									const lx = x0 + (x1 - x0) * (0.88 - i * 0.1);
+									const lv = fns[i]!(lx);
+									if (!Number.isFinite(lv) || lv < y0 || lv > y1) return [];
+									const w = (f.label ?? `y = ${f.expr}`).length * 32 * 0.6;
+									return [{ x0: sx(lx) - w / 2, x1: sx(lx) + w / 2, y0: sy(lv) - 22 - 32, y1: sy(lv) - 22 + 8 }];
+								});
+								const clash = (base: number) => nameBoxes.some((b) => sx(tx) + half > b.x0 && sx(tx) - half < b.x1 && base > b.y0 && base - 26 < b.y1);
+								const above = sy(ty) - 26;
+								const y = sy(ty) < T + 60 || clash(above) ? sy(ty) + 52 : above;
+								return (
+									<g>
+										<circle cx={sx(tx)} cy={sy(ty)} r={16} fill={colors[lastFn]} opacity={0.25} />
+										<circle cx={sx(tx)} cy={sy(ty)} r={9} fill={colors[lastFn]} />
+										<text x={sx(tx)} y={y} textAnchor="middle" fontSize={26} fill={s.text} fontWeight={600}>
+											{text}
+										</text>
+									</g>
+								);
+							})()
+						: null}
 				</svg>
 			</div>
 		</SceneFrame>

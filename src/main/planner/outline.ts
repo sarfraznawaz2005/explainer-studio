@@ -5,6 +5,7 @@ import type { Source } from "@shared/source";
 import type { PlannerAi } from "./ai";
 import { audienceFor, audienceRules } from "./audience";
 import { buildKnowledgeMap, mapForPrompt, needsMap, sourceForPrompt, type KnowledgeChunk } from "./knowledge";
+import { outlineGuide } from "./video-types";
 
 /** The outline as the model writes it: no ids, no approval flag. */
 export const AiOutline = Outline.omit({ approved: true, chapters: true }).extend({
@@ -33,6 +34,7 @@ export function outlineSystem(s: PlanSettings): string {
 		"- `minutes` is the speaking time of each chapter.",
 		"- `style` (the whole-video look): 'cartoon' for kindergarten and young children; 'chalkboard' for school maths and a hand-drawn classroom feel; 'paper' for notes, writing and humanities; 'blueprint' for engineering, physics and how machines work; 'neon' for computing, technology and modern topics for teens; 'academic' for university and research topics; 'clean' for anything else. Never 'brand', 'free' or 'code' (the user picks those).",
 		`- Write every title, goal, point and hook sentence in ${languageLabel(s.language)}. Tone: ${s.tone}.`,
+		...outlineGuide(s),
 	].join("\n");
 }
 

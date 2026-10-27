@@ -41,6 +41,9 @@ import { cn } from "@renderer/lib/utils";
 import { isRunning, newItemId, useIngest, type Item } from "@renderer/stores/ingest";
 import { confirmCost, EstimateCard, PlanWizard } from "./plan-wizard";
 
+/** A small outline of each frame shape, for the format buttons. */
+const FORMAT_ICON: Record<VideoFormat, string> = { landscape: "h-4 w-7", vertical: "h-7 w-4", square: "h-5 w-5", portrait: "h-6 w-5" };
+
 const TYPES = [
 	{ icon: FileText, label: "PDF" },
 	{ icon: FileType, label: "Word" },
@@ -587,11 +590,11 @@ function TopicCard() {
 									type="button"
 									role="radio"
 									aria-checked={on}
-									// Shorts are short: picking vertical suggests 1 minute when the length is long.
-									onClick={() => set({ format: f, minutes: f === "vertical" && form.minutes > 3 ? 1 : form.minutes })}
+									// Shorts and feed videos are short: picking one suggests 1 minute when the length is long.
+									onClick={() => set({ format: f, minutes: f !== "landscape" && form.minutes > 3 ? 1 : form.minutes })}
 									className={cn("flex items-center gap-3 rounded-lg border px-3 py-2.5 text-left transition-colors", on ? "border-primary bg-primary-soft" : "hover:bg-accent")}
 								>
-									<span className={cn("shrink-0 rounded-[3px] border-2", on ? "border-primary" : "border-muted-foreground/60", f === "vertical" ? "h-7 w-4" : "h-4 w-7")} />
+									<span className={cn("shrink-0 rounded-[3px] border-2", on ? "border-primary" : "border-muted-foreground/60", FORMAT_ICON[f])} />
 									<span>
 										<span className="block text-[13px] font-medium">{v.label}</span>
 										<span className="block text-[12px] text-muted-foreground">{v.hint}</span>

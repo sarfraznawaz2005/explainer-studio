@@ -84,6 +84,18 @@ export function extractContent(scene: Scene): SceneContent {
 			return { ...none, heading: scene.props.question, items: items(it(scene.props.question), it(scene.props.answer)) };
 		case "quiz":
 			return { ...none, items: items(...scene.props.questions.map((q) => it(q.question, q.options[q.answer]))) };
+		case "lowerthird":
+			return { ...none, heading: scene.props.statement, items: items(it(scene.props.name, scene.props.role)) };
+		case "device":
+			return { ...none, heading: heading ?? scene.props.caption, items: items(...scene.props.items.map((x) => it(x))) };
+		case "chat":
+			return { ...none, heading: heading ?? scene.props.title, items: items(...scene.props.messages.map((m) => it(m.text))) };
+		case "social":
+			return { ...none, heading: scene.props.author, items: items(it(scene.props.text, scene.props.handle)), numbers: [scene.props.likes, scene.props.shares].flatMap((v, i) => (v === undefined ? [] : [{ label: i ? "shares" : "likes", value: v }])) };
+		case "cta":
+			return { ...none, heading: scene.props.headline, items: items(...scene.props.points.map((x) => it(x)), it(scene.props.action, scene.props.detail)) };
+		case "logo":
+			return { ...none, heading: scene.props.name, items: items(it(scene.props.tagline)) };
 		case "svg":
 			return { ...none, heading: heading ?? scene.props.caption, items: [] };
 	}
@@ -204,6 +216,20 @@ export function buildProps(type: SceneType, c: SceneContent): Record<string, unk
 			return { title: cut(h ?? list[0]!.label, 120), subtitle: list[0] && h ? L(list[0], 200) : undefined };
 		case "chapter":
 			return { number: 1, title: cut(h ?? list[0]!.label, 120) };
+		case "lowerthird":
+			return { name: L(list[0]!, 60), role: D(list[0]!, 80), statement: h ? cut(h, 160) : undefined, side: "left" };
+		case "device":
+			return { heading: h, device: "phone", items: take(0, 5).map((x) => L(x, 80)) };
+		case "chat":
+			return { heading: h, messages: take(1, 8).map((x, i) => ({ from: i % 2 ? "me" : "them", text: L(x, 160) })) };
+		case "social":
+			return { author: cut(h ?? "A viewer", 40), text: cut(list.map((x) => x.label).join(" "), 280) };
+		case "cta": {
+			const last = list.length > 1 ? list.at(-1)! : undefined;
+			return { headline: cut(h ?? list[0]!.label, 100), action: last ? L(last, 40) : "Learn more", detail: last ? D(last, 120) : undefined, points: (last ? list.slice(0, -1) : h ? list : []).slice(0, 3).map((x) => L(x, 60)) };
+		}
+		case "logo":
+			return { name: cut(h ?? list[0]!.label, 60), tagline: h && list[0] ? L(list[0], 100) : undefined };
 		case "figure":
 			throw new Error("A figure scene needs a picture from the source.");
 	}

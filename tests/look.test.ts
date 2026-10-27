@@ -92,7 +92,7 @@ describe("designing a look", () => {
 			seen.push({ system: req.system, text: req.messages.map((m) => (typeof m.content === "string" ? m.content : "")).join("\n") });
 			return { text: JSON.stringify({ ...DEFAULT_LOOK, name: "Night sky", headingFont: "tech" }), usage: { inputTokens: 1, outputTokens: 1 }, finishReason: "stop" } as never;
 		});
-		const brief = { title: "Saturn", level: "Teens", tone: "Friendly", language: "ur", vertical: true, avoid: avoidList(DEFAULT_LOOK, ["Old map: #f1e3c0 background"]), wish: "dark and dreamy" };
+		const brief = { title: "Saturn", level: "Teens", tone: "Friendly", language: "ur", format: "vertical" as const, avoid: avoidList(DEFAULT_LOOK, ["Old map: #f1e3c0 background"]), wish: "dark and dreamy" };
 		const look = await designLook(ai, brief);
 		expect(look).toMatchObject({ name: "Night sky", headingFont: "tech" });
 		expect(seen[0]!.system).toContain(LOOK_SYSTEM.slice(0, 60));

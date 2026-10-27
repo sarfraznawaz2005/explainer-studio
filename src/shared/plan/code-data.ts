@@ -1,3 +1,4 @@
+import { captionBand } from "./captions";
 import { isRtl } from "./code";
 import type { VideoPlan } from "./schema";
 import type { Timeline } from "./timing";
@@ -18,6 +19,8 @@ export type CodeVideoData = {
 	rtl: boolean;
 	intro: number;
 	outro: number;
+	captions: { bottom: number; height: number };
+	tweaks: { accent: string | null; text: number; space: number; speed: number };
 	chapters: { title: string; from: number; durationInFrames: number }[];
 	scenes: CodeSceneData[];
 };
@@ -47,6 +50,8 @@ export function codeVideoData(plan: VideoPlan, t: Timeline): CodeVideoData {
 		rtl: isRtl(plan.meta.language),
 		intro: t.intro,
 		outro: t.outro,
+		captions: captionBand(plan.meta.captions, plan.meta.width, plan.meta.height),
+		tweaks: { accent: plan.meta.tweaks?.accent ?? null, text: plan.meta.tweaks?.text ?? 1, space: plan.meta.tweaks?.space ?? 1, speed: plan.meta.tweaks?.speed ?? 1 },
 		chapters: t.chapters.map((c) => ({ title: c.title, from: c.from, durationInFrames: c.durationInFrames })),
 		scenes: t.scenes.map((s, index) => ({
 			id: s.scene.id,

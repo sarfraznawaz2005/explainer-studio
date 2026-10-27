@@ -30,7 +30,7 @@ import { LEVELS, type Level } from "@shared/ipc/ingest";
 import { plannerChannels as pc, type PlanDraft, type PlannerUpdate } from "@shared/ipc/planner";
 import { voiceChannels, type Voice } from "@shared/ipc/voice";
 import { computeTimeline, formatTime } from "@shared/plan/timing";
-import { LANGUAGES, languageLabel, lengthLabel, Outline, TARGET_MINUTES, VIDEO_FORMATS, type VideoFormat, TONES, type Estimate, type OutlineChapter, type PlanSettings, type PlanStep, type QualityReport, type Tone } from "@shared/planner";
+import { LANGUAGES, languageLabel, lengthLabel, Outline, TARGET_MINUTES, VIDEO_FORMATS, VIDEO_TYPES, type VideoFormat, type VideoType, TONES, type Estimate, type OutlineChapter, type PlanSettings, type PlanStep, type QualityReport, type Tone } from "@shared/planner";
 import { Button } from "@renderer/components/ui/button";
 import { confirm } from "@renderer/components/ui/confirm";
 import { Badge, Card, CardContent, CardDescription, CardHeader, CardTitle, Input, Label, Textarea, Tooltip } from "@renderer/components/ui/primitives";
@@ -163,12 +163,22 @@ function SettingsCard({ settings, onChange, disabled }: { settings: PlanSettings
 				<Field label="Audience">
 					<Select<Level> ariaLabel="Audience level" value={settings.level} onChange={(v) => set("level", v)} options={LEVELS.map((l) => ({ value: l, label: l }))} disabled={disabled} />
 				</Field>
+				<Field label="Video type">
+					<Select<VideoType>
+						ariaLabel="Video type"
+						value={settings.videoType}
+						// A promo is short: picking it suggests 1 minute when the length is open or long.
+						onChange={(v) => onChange({ ...settings, videoType: v, targetMinutes: v === "promo" && (!settings.targetMinutes || settings.targetMinutes > 2) ? 1 : settings.targetMinutes })}
+						options={(Object.keys(VIDEO_TYPES) as VideoType[]).map((t) => ({ value: t, label: VIDEO_TYPES[t].label, hint: VIDEO_TYPES[t].hint }))}
+						disabled={disabled}
+					/>
+				</Field>
 				<Field label="Format">
 					<Select<VideoFormat>
 						ariaLabel="Video format"
 						value={settings.format}
 						// Shorts are short: switching to vertical suggests 1 minute when the length is open or long.
-						onChange={(v) => onChange({ ...settings, format: v, targetMinutes: v === "vertical" && (!settings.targetMinutes || settings.targetMinutes > 3) ? 1 : settings.targetMinutes })}
+						onChange={(v) => onChange({ ...settings, format: v, targetMinutes: v !== "landscape" && (!settings.targetMinutes || settings.targetMinutes > 3) ? 1 : settings.targetMinutes })}
 						options={(Object.keys(VIDEO_FORMATS) as VideoFormat[]).map((f) => ({ value: f, label: VIDEO_FORMATS[f].label, hint: VIDEO_FORMATS[f].hint }))}
 						disabled={disabled}
 					/>
@@ -701,7 +711,7 @@ function PicturesCard({ draftId, settings, canFind, disabled }: { draftId: strin
 function defaultSettings(d: PlanDraft, voice: string | undefined): PlanSettings {
 	// A draft made from a topic starts with its settings but no voice; use the default voice then.
 	if (d.settings) return d.settings.voice ? d.settings : { ...d.settings, voice };
-	return { format: "landscape", level: isLevel(d.level) ? d.level : "High school", language: "en", tone: "Friendly", targetMinutes: null, voice, style: "auto", webPictures: true };
+	return { format: "landscape", videoType: "explainer", level: isLevel(d.level) ? d.level : "High school", language: "en", tone: "Friendly", targetMinutes: null, voice, style: "auto", webPictures: true };
 }
 
 export function PlanWizard({ draftId }: { draftId: string }) {

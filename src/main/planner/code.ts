@@ -1,14 +1,16 @@
 import type { CheckResult } from "@shared/code-preview";
 import { CODE_IMPORTS, CODE_TYPES, compileCode, extractCode, VideoCode } from "@shared/plan/code";
 import { codeVideoData } from "@shared/plan/code-data";
+import { CODE_STARTER } from "@shared/plan/code-starter";
 import { LOOK_FONTS } from "@shared/plan/look";
 import type { VideoPlan } from "@shared/plan/schema";
 import { computeTimeline } from "@shared/plan/timing";
-import { languageLabel } from "@shared/planner";
+import { formatOf, languageLabel } from "@shared/planner";
 import type { TextRunResult } from "../ai/providers/types";
 import type { Check } from "../ai/structured";
 import { writeLog } from "../app/logger";
 import type { PlannerAi } from "./ai";
+import { FRAME_WORDS } from "./look";
 import type { EstimateCall } from "./estimate";
 import { tokens } from "./estimate";
 
@@ -38,6 +40,8 @@ export type CodeBrief = {
 	current?: string;
 	/** Redo: errors the preview saw while playing the current code. */
 	seenErrors?: string[];
+	/** Redo: the one part the user clicked (its data-id and words). Only that part changes. */
+	part?: { id: string; text: string };
 };
 
 /** The test draw: draws a "code" plan in the sandbox. */
@@ -58,11 +62,33 @@ export const CODE_SYSTEM = [
 	"- Scenes: wrap each scene in <Sequence from={scene.from} durationInFrames={scene.durationInFrames}>, so useCurrentFrame() inside is counted from the scene start. Sentence, cue and gap frames are counted from the scene start too.",
 	"- Sync: show each idea when the voice says it. Use scene.cues (reveal/focus/highlight item `target` at `frame`) and scene.sentences (when each sentence starts).",
 	"- Content: the scene's text, numbers and lists are in scene.props. Read them from the data, never type them into the code: the user edits texts later and scenes can be added. Handle every scene type in the data, plus a sensible general layout for any other type (heading and the texts found in props).",
-	"- Text must stay inside the frame and be easy to read at this size, whatever its length: use fitFontSize or wrapping, and keep a safe margin. Tall frames (height > width) are watched on phones: use big type. When video.rtl is true, set direction: 'rtl' on text.",
+	"- Text must stay inside the frame and be easy to read at this size, whatever its length: use fitFontSize or wrapping, and keep a safe margin. Narrow frames (vertical 9:16, portrait 4:5, square 1:1) are watched on phones: use big type and few words. In vertical 9:16 frames keep text out of the top 11% and the bottom 17%: the phone app's own bar, buttons and captions cover them. When video.rtl is true, set direction: 'rtl' on text.",
 	"- Equations (LaTeX in props) are drawn with <Tex tex={...} style={...} />. Figures: props hold file names; figureUrl(file) gives the URL for <Img src>, or undefined when it cannot be shown (then draw something else).",
 	"- Same picture on every draw of a frame: it may depend only on the frame number and the data. Use random(seed) from remotion for randomness. No Math.random, no Date, no timers, no effects.",
 	"- Keep frames light: at most a few hundred elements per frame, no loops over huge ranges. Use useMemo for heavy work.",
 	"- Write compact code: reusable components and loops over video.scenes, never one hand-written block per scene. Aim for under 700 lines.",
+	"",
+	"DESIGN FIRST: THE SPEC",
+	"Right after the name and idea lines, write a SPEC as one block comment (/* SPEC ... */, at most 25 lines). Turn every adjective into exact values:",
+	"- palette: hex colours by role (background, surface, text, muted text, accent, and any others you use);",
+	"- type: font key and px size and weight for each text level (title, heading, body, label, numbers);",
+	"- space: frame margin, gaps and corner radius in px; the layout grid;",
+	"- motion: the easing for entrances, emphasis and exits (Easing.bezier(...) values or spring configs), durations and stagger in frames;",
+	"- scene change: how one scene hands over to the next, with its length in frames.",
+	"Then write code that follows the SPEC exactly: the code uses these values, not new ones.",
+	"",
+	"PARTS",
+	'Give every main element a short, stable data-id attribute, so the user can click it in the app and ask you to change only that part: the background "bg", and per scene "s{index}-title", "s{index}-item-{i}", "s{index}-figure", plus your own names for other parts. Keep the ids when you change a design.',
+	"",
+	"QUICK TWEAKS",
+	"The user can change a few things in the app without asking you: video.tweaks. Your design must follow them, everywhere:",
+	"- every font size × tweaks.text; every margin, padding and gap × tweaks.space;",
+	"- every animation length and delay inside a reveal ÷ tweaks.speed (cue and sentence frames stay as they are);",
+	"- the main accent colour = tweaks.accent ?? your own accent. Keep text readable on it.",
+	"",
+	"AVOID THE GENERIC AI LOOK",
+	"Unless the user asks for them, do not fall back on these defaults: a dark navy or black void with neon glow; purple-to-blue gradients; frosted glass cards; every element fading in and sliding up the same way; three equal cards in a row; a logo parked in a corner; emoji used as icons; the same layout for every scene type.",
+	"Instead pick a clear point of view that fits this topic and audience, and commit to it. Vary entrances, eases and timing with meaning (what matters most moves differently). Let each scene type have a layout that suits its content.",
 	"",
 	"WHAT YOU CAN USE",
 	`- Imports, only these names: ${Object.entries(CODE_IMPORTS)
@@ -76,11 +102,13 @@ export const CODE_SYSTEM = [
 	"- Draw with div, span, svg (all SVG shapes, gradients, filters, masks, paths) and <Img>. Style with inline style={{...}} only (there is no stylesheet, no class names, no <style> tag). CSS gradients, transforms, filters, blend modes, shadows and clip-paths all work.",
 	"",
 	"REFUSED BY THE CHECKER (the file is rejected): network (fetch and others), window, document, globalThis, eval, Function, timers, storage, Date, Math.random, import() and modules not listed, <iframe>, <script>, <a>, <video>, <audio>, <style>, <link>, <form>, dangerouslySetInnerHTML, property names built from strings (obj['a' + b]), constructor, prototype and __proto__.",
+	"Also refused, because they run on the clock and not on the frame: useState and useReducer, CSS transition and animation properties, and SVG <animate>, <animateTransform>, <animateMotion> and <set>. Animate only with interpolate(), spring() and the frame number.",
 	"",
 	"REPLY FORMAT",
-	"One ```tsx code block and nothing else. Its first two lines are comments:",
+	"One ```tsx code block and nothing else. Its first two lines are comments, then the SPEC:",
 	"// name: <the design's name, 2 to 4 words>",
 	"// idea: <one sentence: the idea behind the design>",
+	"/* SPEC ... */",
 	"",
 	"THE TYPES",
 	CODE_TYPES,
@@ -89,13 +117,16 @@ export const CODE_SYSTEM = [
 export function codePrompt(b: CodeBrief, plan: VideoPlan): string {
 	const t = computeTimeline(plan);
 	const data = codeVideoData(plan, t);
-	const tall = plan.meta.height > plan.meta.width;
 	return [
 		`Video: "${b.title}". Audience: ${b.level}. Tone: ${b.tone}. Language of the texts: ${languageLabel(b.language)}${data.rtl ? " (right to left)" : ""}.`,
-		`Frame: ${plan.meta.width}×${plan.meta.height} (${tall ? "vertical, for phones" : "wide"}), ${t.fps} fps, ${Math.round(t.durationInFrames / t.fps)} seconds, ${data.scenes.length} scenes.`,
+		`Frame: ${plan.meta.width}×${plan.meta.height}, ${FRAME_WORDS[formatOf(plan.meta)]}; ${t.fps} fps, ${Math.round(t.durationInFrames / t.fps)} seconds, ${data.scenes.length} scenes.`,
 		b.wish ? `What the user wants (follow it closely): ${b.wish}` : "The user gave no wishes: design what suits this topic and audience best.",
 		b.avoid?.length && !b.current ? `Designs used before (make something clearly different unless the user asks for it):\n${b.avoid.map((a) => `- ${a}`).join("\n")}` : "",
-		b.current ? `This video already has code (below). Change it as the user asks; keep what they did not ask to change. Reply with the complete new file.\n\`\`\`tsx\n${b.current}\n\`\`\`` : "",
+		b.current && b.part
+			? `This video already has code (below). The user clicked ONE part of the picture: the element with data-id="${b.part.id}"${b.part.text ? ` (it shows: "${b.part.text}")` : ""}. Change ONLY that part, as the user asks. Every other element, value, layout and animation stays exactly as it is, and every data-id stays. Reply with the complete new file.\n\`\`\`tsx\n${b.current}\n\`\`\``
+			: b.current
+			? `This video already has code (below). Change it as the user asks; keep what they did not ask to change. Reply with the complete new file.\n\`\`\`tsx\n${b.current}\n\`\`\``
+			: `Start from this working file (below). It already does the plumbing right: one Sequence per scene, the texts of every scene type (headingOf, itemsOf), reveal times from the voice cues (revealAt), text that fits, right to left, figures and equations. Keep that plumbing and grow it as you need. Its look is only a grey placeholder: replace all of it (the SPEC, the S values, the layouts, the motion), and give each scene type a layout that suits its content.\n\`\`\`tsx\n${CODE_STARTER}\`\`\``,
 		b.seenErrors?.length ? `The preview saw these errors with that code; fix them too:\n${b.seenErrors.map((e) => `- ${e}`).join("\n")}` : "",
 		`The data your component gets as \`video\` (JSON):\n${JSON.stringify(data)}`,
 	]
@@ -146,7 +177,7 @@ export function codeChecker(plan: VideoPlan, draw: DrawFn | null) {
 }
 
 export const codeRepair = (problems: string[]) =>
-	`The test draw of your code found problems:\n${problems.map((p) => `- ${p}`).join("\n")}\n\nFix them and reply with the complete corrected file, in one \`\`\`tsx block, with the name and idea comment lines first.`;
+	`The test draw of your code found problems:\n${problems.map((p) => `- ${p}`).join("\n")}\n\nFix them and reply with the complete corrected file, in one \`\`\`tsx block, with the name and idea comment lines and the SPEC first.`;
 
 /** Progress of one run: a reply is being checked, or problems go back for a fix. */
 export type CodeProgress = (step: "checking" | "fixing", attempt: number, problems?: number) => void;
@@ -173,7 +204,7 @@ export async function writeVideoCode(ai: PlannerAi, brief: CodeBrief, plan: Vide
 
 /** Cost estimate: one call, plus repair rounds at the high end. Without a plan yet, the data size is guessed from the scene count. */
 export function codeCalls(brief: CodeBrief, plan: VideoPlan | null, sceneGuess = 20): EstimateCall[] {
-	const prompt = plan ? codePrompt(brief, plan).length : 2_000 + sceneGuess * 1_400 + (brief.current?.length ?? 0);
+	const prompt = plan ? codePrompt(brief, plan).length : 2_000 + sceneGuess * 1_400 + (brief.current?.length ?? CODE_STARTER.length);
 	const input = tokens(CODE_SYSTEM.length + prompt);
 	const output = OUTPUT_GUESS;
 	const first: EstimateCall = { slot: "planner", input, output };

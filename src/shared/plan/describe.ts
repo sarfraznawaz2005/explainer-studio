@@ -32,6 +32,12 @@ export const SCENE_LABELS: Record<SceneType, string> = {
 	figure: "Source figure",
 	pause: "Pause and think",
 	quiz: "Recap quiz",
+	lowerthird: "Name bar",
+	device: "Phone or browser",
+	chat: "Chat messages",
+	social: "Social post",
+	cta: "Call to action",
+	logo: "Logo outro",
 	svg: "Custom drawing",
 };
 
@@ -43,6 +49,7 @@ export const SCENE_GROUPS: { name: string; types: SceneType[] }[] = [
 	{ name: "Technical", types: ["code", "trace", "table"] },
 	{ name: "Story and world", types: ["timeline", "map", "analogy", "dialogue", "figure"] },
 	{ name: "Engagement", types: ["pause", "quiz"] },
+	{ name: "Promo and social", types: ["lowerthird", "device", "chat", "social", "cta", "logo"] },
 	{ name: "Custom", types: ["svg"] },
 ];
 
@@ -110,6 +117,18 @@ export function sceneName(scene: Scene): string {
 			return scene.props.question;
 		case "quiz":
 			return first(p.heading, "Quiz");
+		case "lowerthird":
+			return first(scene.props.name, scene.props.statement);
+		case "device":
+			return first(p.heading, scene.props.caption, scene.props.url, scene.props.device === "phone" ? "Phone screen" : "Browser window");
+		case "chat":
+			return first(p.heading, scene.props.title, scene.props.messages[0]!.text);
+		case "social":
+			return `${scene.props.author}: ${scene.props.text}`;
+		case "cta":
+			return first(scene.props.headline, scene.props.action);
+		case "logo":
+			return scene.props.name;
 		case "svg":
 			return first(p.heading, scene.props.caption, "Custom drawing");
 	}

@@ -38,7 +38,11 @@ export function TraceScene({ heading, array, steps }: PropsOf<"trace">) {
 	const rowW = n * box + (n - 1) * gap;
 	const left = (CONTENT_W - rowW) / 2;
 	const slotX = (slot: number) => left + slot * (box + gap);
-	const rowY = Math.round(H * (vertical ? 0.3 : 0.24));
+	// Under the row: the pointers (stacked when they share a cell) and the note at the bottom.
+	// A short stage (a square frame with captions) moves the row up so they do not meet.
+	const stacked = Math.max(0, ...steps.map((st) => Math.max(0, ...st.pointers.map((p) => st.pointers.filter((q) => q.index === p.index).length - 1))));
+	const below = box + 52 + stacked * 76 + 64 + 80;
+	const rowY = Math.max(80, Math.min(Math.round(H * (vertical ? 0.3 : 0.24)), H - below));
 	// k = index of the current step (-1 before the first focus).
 	const k = frames.filter((f) => f <= frame).length - 1;
 	const states = traceStates(array, steps);

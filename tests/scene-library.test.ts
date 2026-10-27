@@ -27,7 +27,7 @@ describe("scene library", () => {
 			expect(SCENE_LABELS[t]).toBeTruthy();
 		}
 		expect(SCENE_GROUPS.flatMap((g) => g.types).sort()).toEqual([...SCENE_TYPES].sort());
-		expect(SCENE_TYPES.length).toBe(31);
+		expect(SCENE_TYPES.length).toBe(37);
 	});
 
 	it("the gallery plan is valid and every scene has a name and timing", () => {

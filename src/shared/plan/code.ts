@@ -26,9 +26,28 @@ export const VideoCode = z.object({
 });
 export type VideoCode = z.infer<typeof VideoCode>;
 
+/**
+ * Quick changes to an AI design that need no AI call: the design reads them
+ * from video.tweaks (the prompt asks it to), and the Studio sets them.
+ */
+export const CodeTweaks = z.object({
+	/** The main accent colour, or none to keep the design's own. */
+	accent: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
+	/** Text size, times the design's own (0.85 to 1.15). */
+	text: z.number().min(0.85).max(1.15).default(1),
+	/** Margins and gaps, times the design's own. */
+	space: z.number().min(0.8).max(1.25).default(1),
+	/** Motion speed: entrances and other animations run this much faster. */
+	speed: z.number().min(0.5).max(2).default(1),
+});
+export type CodeTweaks = z.infer<typeof CodeTweaks>;
+export const NO_TWEAKS: CodeTweaks = { text: 1, space: 1, speed: 1 };
+/** True when the design's code reads the tweaks (older designs do not). */
+export const usesTweaks = (source: string) => /\btweaks\b/.test(source);
+
 /** What the AI's code may import, by module, and the names in each. */
 export const CODE_IMPORTS = {
-	react: ["Fragment", "useMemo", "useCallback", "useState", "useRef", "useReducer", "useContext", "createContext", "memo", "Children", "cloneElement", "isValidElement", "useId"],
+	react: ["Fragment", "useMemo", "useCallback", "useRef", "useContext", "createContext", "memo", "Children", "cloneElement", "isValidElement", "useId"],
 	remotion: ["AbsoluteFill", "Sequence", "Series", "Loop", "Freeze", "Img", "useCurrentFrame", "useVideoConfig", "interpolate", "interpolateColors", "spring", "measureSpring", "Easing", "random"],
 	studio: ["fonts", "figureUrl", "Tex", "sceneAt", "fitFontSize"],
 } as const satisfies Record<string, readonly string[]>;
@@ -88,6 +107,19 @@ const BANNED_PROPS = new Set(["constructor", "prototype", "__proto__", "__define
 
 /** HTML tags that load other pages or code, or play media of their own. */
 const BANNED_TAGS = new Set(["script", "iframe", "frame", "frameset", "object", "embed", "link", "meta", "base", "form", "a", "video", "audio", "source", "track", "portal", "foreignObject", "style"]);
+
+/** SVG tags that animate on the wall clock, not on the frame number. */
+const CLOCK_TAGS = new Set(["animate", "animateTransform", "animateMotion", "animateColor", "set"]);
+
+/** React hooks that keep state between draws: the picture would depend on what was drawn before. */
+const STATE_HOOKS = new Map(["useState", "useReducer"].map((h) => [h, `${h} keeps state between frames, so a frame would depend on the frames drawn before it. Fix: work out every value from useCurrentFrame() and the data (useMemo for heavy work).`]));
+
+/** CSS properties that run on the wall clock. Always wrong in a frame-by-frame render. */
+const CLOCK_CSS = new Set(["transitionProperty", "transitionDuration", "transitionDelay", "transitionTimingFunction", "transitionBehavior", "animationName", "animationDuration", "animationDelay", "animationIterationCount", "animationTimingFunction", "animationDirection", "animationFillMode", "animationPlayState", "animationComposition", "animationTimeline"]);
+/** "transition" and "animation" are common words too: refused only when the value looks like CSS timing. */
+const CLOCK_CSS_SHORT = new Set(["transition", "animation"]);
+const CSS_TIMING = /\d(?:\.\d+)?m?s\b|\binfinite\b/;
+const CLOCK_CSS_FIX = "CSS transitions and animations run on the clock, not on the frame, so the render would not match the preview. Fix: animate with interpolate() or spring() on useCurrentFrame().";
 
 /**
  * Globals that are shadowed (set to undefined) around the code at run time.
@@ -152,9 +184,19 @@ function scan(js: string, tree: AnyNode) {
 				const prop = n.property as AnyNode;
 				const key = n.computed ? staticKey(prop) : (prop.name as string);
 				if (key && BANNED_PROPS.has(key)) bad(n, `"${key}" is not allowed.`);
+				const hook = key ? STATE_HOOKS.get(key) : undefined;
+				if (hook && !n.computed && obj.type === "Identifier") bad(n, hook);
 				if (obj.type === "Identifier" && obj.name === "Math" && key === "random") bad(n, "Math.random() gives a different picture on every draw. Use random(seed) from remotion.");
 				// A key built from strings at run time could spell a blocked name.
 				if (n.computed && (prop.type === "BinaryExpression" || (prop.type === "TemplateLiteral" && (prop.expressions as unknown[]).length > 0)) && hasString(prop)) bad(n, "Property names built from strings are not allowed. Use a plain name or a number index.");
+				break;
+			}
+			case "Property": {
+				const k = n.key as AnyNode;
+				const name = n.computed ? null : k.type === "Identifier" ? (k.name as string) : typeof k.value === "string" ? (k.value as string) : null;
+				const v = n.value as AnyNode;
+				const text = v.type === "Literal" && typeof v.value === "string" ? v.value : v.type === "TemplateLiteral" ? (v.quasis as AnyNode[]).map((q) => (q.value as { cooked: string }).cooked).join("") : null;
+				if (name && (CLOCK_CSS.has(name) || (CLOCK_CSS_SHORT.has(name) && text !== null && CSS_TIMING.test(text)))) bad(n, `"${name}": ${CLOCK_CSS_FIX}`);
 				break;
 			}
 			case "Literal":
@@ -181,6 +223,11 @@ function scan(js: string, tree: AnyNode) {
 					break;
 				}
 				for (const s of n.specifiers as AnyNode[]) {
+					const hook = s.type === "ImportSpecifier" ? STATE_HOOKS.get((s.imported as AnyNode).name as string) : undefined;
+					if (from === "react" && hook) {
+						bad(s, hook);
+						continue;
+					}
 					if (s.type !== "ImportSpecifier") {
 						if (from !== "react") bad(s, `Import names from "${from}" one by one: import { ... } from "${from}".`);
 						continue;
@@ -206,6 +253,7 @@ function scan(js: string, tree: AnyNode) {
 				const callee = n.callee as AnyNode;
 				const first = (n.arguments as AnyNode[])[0];
 				if (callee.type === "Identifier" && callee.name === "__h" && first?.type === "Literal" && typeof first.value === "string" && BANNED_TAGS.has(first.value)) bad(n, `<${first.value}> is not allowed. Draw with div, span, svg, img (Img) and CSS.`);
+				else if (callee.type === "Identifier" && callee.name === "__h" && first?.type === "Literal" && typeof first.value === "string" && CLOCK_TAGS.has(first.value)) bad(n, `<${first.value}> animates on the clock and can loop forever, so the render would not match the preview. Fix: animate the attribute with interpolate() on useCurrentFrame().`);
 				break;
 			}
 			case "ForStatement":
@@ -311,6 +359,10 @@ export const CODE_TYPES = `type VideoData = {
   title: string; level: string; language: string; rtl: boolean;
   /** Frames of the app's own brand intro at the start and outro at the end (0 = none). The app draws them over your picture. */
   intro: number; outro: number;
+  /** The band the app's captions cover, in px: from the frame bottom, and its height (0 = no captions). Keep text out of it. */
+  captions: { bottom: number; height: number };
+  /** Quick changes the user makes in the app (no AI call). Use them: font sizes × text, margins and gaps × space, animation lengths and delays ÷ speed (not the voice-cue frames), accent ?? your main accent colour. */
+  tweaks: { accent: string | null; text: number; space: number; speed: number };
   chapters: { title: string; from: number; durationInFrames: number }[];
   scenes: SceneData[];
 };

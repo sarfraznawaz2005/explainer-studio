@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { CODE_IMPORTS, CODE_TYPES, compileCode, extractCode, isRtl, VideoCode } from "@shared/plan/code";
+import { FromPreview } from "@shared/code-preview";
+import { CODE_IMPORTS, CODE_TYPES, CodeTweaks, compileCode, extractCode, isRtl, usesTweaks, VideoCode } from "@shared/plan/code";
 import { codeSceneAt, codeVideoData } from "@shared/plan/code-data";
+import { CODE_STARTER } from "@shared/plan/code-starter";
 import { VideoPlan } from "@shared/plan/schema";
 import { computeTimeline } from "@shared/plan/timing";
 import { plannerAiFromRunner } from "../src/main/planner/ai";
-import { CODE_SYSTEM, codeCalls, codeHeader, codePrompt, writeVideoCode, type DrawFn } from "../src/main/planner/code";
+import { CODE_SYSTEM, codeCalls, codeHeader, codePrompt, codeRepair, writeVideoCode, type DrawFn } from "../src/main/planner/code";
 import { loadVideoCode } from "../video/src/code/runtime";
 import { SAMPLE_PLAN } from "../video/src/samples/web-page-journey";
 import { CRASH_IN_SCENE_2, SAMPLE_CODE } from "../video/src/samples/code-samples";
@@ -50,8 +52,32 @@ describe("AI video code: compile and scan", () => {
 		["raw HTML", "const x = <div dangerouslySetInnerHTML={{ __html: '<img>' }} />;"],
 		["new Image", "const i = new Image();"],
 		["the runtime's own names", "const m = __modules;"],
+		["useState", 'import { useState } from "react";'],
+		["useReducer", 'import { useReducer } from "react";'],
+		["React.useState", 'import React from "react"; const [a] = React.useState(1);'],
+		["a CSS transition", "const x = <div style={{ transition: 'opacity 0.3s ease' }} />;"],
+		["a CSS transition in quotes", "const s = { 'transitionDuration': '200ms' };"],
+		["an endless CSS animation", "const s = { animation: 'spin 2s linear infinite' };"],
+		["an animation count", "const s = { animationIterationCount: 'infinite' };"],
+		["SVG <animate>", "const x = <svg><circle r={4}><animate attributeName='r' dur='1s' repeatCount='indefinite' /></circle></svg>;"],
+		["SVG <animateTransform>", "const x = <svg><g><animateTransform attributeName='transform' type='rotate' dur='2s' /></g></svg>;"],
+		["SVG <set>", "const x = <svg><rect><set attributeName='fill' to='red' begin='1s' /></rect></svg>;"],
 	])("refuses %s", (_, body) => {
 		expect(problems(wrap(body)).length).toBeGreaterThan(0);
+	});
+
+	it("gives a Fix hint for clock-based motion and state", () => {
+		expect(problems(wrap('import { useState } from "react";'))[0]).toMatch(/Fix: .*useCurrentFrame/);
+		expect(problems(wrap("const s = { transition: 'all 1s' };"))[0]).toMatch(/Fix: .*interpolate/);
+		expect(problems(wrap("const x = <svg><animate dur='1s' /></svg>;"))[0]).toMatch(/Fix: .*interpolate/);
+	});
+
+	it("does not mistake normal names for clock motion", () => {
+		const src = wrap(`
+			const scene = { transition: "wipe", animation: "pop" };
+			const t = scene.toString(); const k = "useState"; const o = { constructorName: 1 };
+			const x = <svg><g><rect width={4} height={4} /></g></svg>;`);
+		expect(problems(src)).toEqual([]);
 	});
 
 	it("allows normal code: own names like top and parent, number indexes, maps and loops", () => {
@@ -78,6 +104,8 @@ describe("AI video code: compile and scan", () => {
 		expect(CODE_IMPORTS.remotion).toContain("useCurrentFrame");
 		expect(CODE_IMPORTS.remotion).not.toContain("Audio");
 		expect(CODE_IMPORTS.react).not.toContain("useEffect");
+		expect(CODE_IMPORTS.react).not.toContain("useState");
+		expect(CODE_IMPORTS.react).not.toContain("useReducer");
 	});
 });
 
@@ -86,6 +114,13 @@ describe("AI video code: running", () => {
 		const r = loadVideoCode(SAMPLE_CODE);
 		expect(r.ok, r.ok ? "" : r.problems.join("\n")).toBe(true);
 		expect(loadVideoCode(CRASH_IN_SCENE_2).ok).toBe(true);
+	});
+
+	it("the starter file compiles, passes the scan and loads, with a name and a SPEC", () => {
+		expect(compileCode(CODE_STARTER).ok, problems(CODE_STARTER).join("\n")).toBe(true);
+		expect(loadVideoCode(CODE_STARTER).ok).toBe(true);
+		expect(codeHeader(CODE_STARTER).name).toBe("Starter");
+		expect(CODE_STARTER).toMatch(/\/\* SPEC/);
 	});
 
 	it("hides the page globals from the code (they are undefined inside)", () => {
@@ -120,6 +155,19 @@ describe("AI video code: the data it gets", () => {
 		expect(isRtl("en")).toBe(false);
 	});
 
+	it("passes the quick tweaks to the code (defaults when none), within limits", () => {
+		const plain = VideoPlan.parse(SAMPLE_PLAN);
+		expect(codeVideoData(plain, computeTimeline(plain)).tweaks).toEqual({ accent: null, text: 1, space: 1, speed: 1 });
+		const tuned = VideoPlan.parse({ ...SAMPLE_PLAN, meta: { ...SAMPLE_PLAN.meta, tweaks: { accent: "#e11d48", text: 1.1, space: 0.9, speed: 1.5 } } });
+		expect(codeVideoData(tuned, computeTimeline(tuned)).tweaks).toEqual({ accent: "#e11d48", text: 1.1, space: 0.9, speed: 1.5 });
+		expect(CodeTweaks.safeParse({ text: 2 }).success).toBe(false);
+		expect(CodeTweaks.safeParse({ accent: "red" }).success).toBe(false);
+		expect(usesTweaks(CODE_STARTER)).toBe(true);
+		expect(usesTweaks(SAMPLE_CODE)).toBe(false);
+		expect(CODE_SYSTEM).toMatch(/QUICK TWEAKS/);
+		expect(CODE_TYPES).toMatch(/tweaks: \{ accent: string \| null; text: number; space: number; speed: number \}/);
+	});
+
 	it("is stored in the plan", () => {
 		const plan = VideoPlan.parse({ ...SAMPLE_PLAN, meta: { ...SAMPLE_PLAN.meta, style: "code", code: { name: "Neon pulse", idea: "x", source: SAMPLE_CODE } } });
 		expect(plan.meta.code?.name).toBe("Neon pulse");
@@ -152,6 +200,44 @@ describe("AI video code: writing, checking and fixing", () => {
 		// No house style in the instructions.
 		expect(CODE_SYSTEM).not.toMatch(/\b(pastel|minimal|flat design|corporate)\b/i);
 		expect(codePrompt({ ...brief, wish: undefined }, plan)).toMatch(/no wishes/);
+	});
+
+	it("gives a new design the starter file, and a change the current file instead", () => {
+		const fresh = codePrompt(brief, plan);
+		expect(fresh).toContain(CODE_STARTER);
+		expect(fresh).toMatch(/replace all of it/);
+		const change = codePrompt({ ...brief, current: SAMPLE_CODE }, plan);
+		expect(change).toContain(SAMPLE_CODE);
+		expect(change).not.toContain(CODE_STARTER);
+		expect(codeCalls({ ...brief }, null)[0]!.input).toBeGreaterThan(codeCalls({ ...brief, current: "x" }, null)[0]!.input);
+	});
+
+	it("change one part: asks for data-ids, and a part change names only that part", () => {
+		expect(CODE_SYSTEM).toMatch(/data-id/);
+		const p = codePrompt({ ...brief, current: SAMPLE_CODE, part: { id: "s2-title", text: "How DNS works" } }, plan);
+		expect(p).toMatch(/Change ONLY that part/);
+		expect(p).toContain('data-id="s2-title"');
+		expect(p).toContain('"How DNS works"');
+		expect(codePrompt({ ...brief, current: SAMPLE_CODE }, plan)).not.toMatch(/ONLY that part/);
+		// The sandbox may only name parts with plain ids.
+		expect(FromPreview.safeParse({ type: "picked", id: "s2-title", text: "x" }).success).toBe(true);
+		expect(FromPreview.safeParse({ type: "picked", id: "x\" onclick=\"y", text: "x" }).success).toBe(false);
+		expect(FromPreview.safeParse({ type: "picked", id: "s".repeat(80), text: "x" }).success).toBe(false);
+		expect(CODE_STARTER).toMatch(/data-id/);
+	});
+
+	it("asks for a SPEC with exact values before the code, and names the generic AI look to avoid", () => {
+		expect(CODE_SYSTEM).toMatch(/SPEC/);
+		expect(CODE_SYSTEM).toMatch(/hex colours/);
+		expect(CODE_SYSTEM).toMatch(/px size/);
+		expect(CODE_SYSTEM).toMatch(/Easing\.bezier/);
+		expect(CODE_SYSTEM.lastIndexOf("/* SPEC")).toBeGreaterThan(CODE_SYSTEM.indexOf("// idea:"));
+		for (const d of ["neon glow", "purple-to-blue gradients", "frosted glass", "sliding up", "three equal cards", "logo parked"]) expect(CODE_SYSTEM).toContain(d);
+		// The user's wish wins over the list.
+		expect(CODE_SYSTEM).toMatch(/Unless the user asks for them/);
+		expect(codeRepair(["x"])).toMatch(/SPEC/);
+		// The SPEC does not break the name and idea lines.
+		expect(codeHeader("// name: Ink\n// idea: Pen on paper.\n/* SPEC\npalette: #fff\n*/\nexport default 1")).toEqual({ name: "Ink", idea: "Pen on paper." });
 	});
 
 	it("takes good code at once, with its name and idea", async () => {

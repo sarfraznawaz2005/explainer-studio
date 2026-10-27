@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { AbsoluteFill, Img, interpolate, spring, useCurrentFrame, useVideoConfig } from "remotion";
 import { brandFontStack, type BrandStamp } from "../../../src/shared/brand";
+import { isNarrow, isPhone } from "../../../src/shared/plan/frame";
 
 /**
  * The brand kit on screen: an intro before the first scene, an outro with an
@@ -71,7 +72,7 @@ export function BrandIntro({ b }: { b: BrandStamp }) {
 	const bar = interpolate(frame, [10, 34], [0, 1], clamp);
 	const out = useFadeOut(10);
 	const { width, height } = useVideoConfig();
-	const tall = height > width;
+	const tall = isNarrow(width, height);
 	return (
 		<AbsoluteFill style={{ background: p.bg, color: p.text, fontFamily: p.font, opacity: out, overflow: "hidden" }} data-brand="intro">
 			<Glow b={b} />
@@ -114,9 +115,9 @@ export function BrandOutro({ b }: { b: BrandStamp }) {
 	const zones = spring({ frame: frame - 6, fps, config: { damping: 200 } });
 	const out = useFadeOut(12);
 	const { width, height } = useVideoConfig();
-	const tall = height > width;
+	const tall = isNarrow(width, height);
 	// With an end screen the words sit on the left, leaving the right for YouTube's elements.
-	// Vertical videos (Shorts, TikTok, Reels) have no end screens: the words stay centred.
+	// Narrow videos (Shorts, TikTok, Reels, feeds) have no end screens: the words stay centred.
 	const left = b.endScreen && !tall;
 	return (
 		<AbsoluteFill style={{ background: p.bg, color: p.text, fontFamily: p.font, opacity: out, overflow: "hidden" }} data-brand="outro">
@@ -185,8 +186,9 @@ const MARK_SIZE = { small: 60, medium: 84, large: 120 } as const;
 export function Watermark({ b, dark }: { b: BrandStamp; dark: boolean }) {
 	const frame = useCurrentFrame();
 	const { durationInFrames, width, height } = useVideoConfig();
-	// Vertical: below the phone app's own bar at the top.
-	const tall = height > width;
+	// Phones (9:16): below the app's own bar at the top. Narrow frames: closer to the side.
+	const tall = isPhone(width, height);
+	const narrow = isNarrow(width, height);
 	const w = b.watermark;
 	const fade = interpolate(frame, [0, 15, durationInFrames - 15, durationInFrames], [0, 1, 1, 0], clamp);
 	const size = MARK_SIZE[w.size];
@@ -199,7 +201,7 @@ export function Watermark({ b, dark }: { b: BrandStamp; dark: boolean }) {
 			style={{
 				position: "absolute",
 				[top ? "top" : "bottom"]: top ? (tall ? 170 : 50) : 84,
-				[leftSide ? "left" : "right"]: tall ? 48 : 60,
+				[leftSide ? "left" : "right"]: narrow ? 48 : 60,
 				opacity: w.opacity * fade,
 				display: "flex",
 				alignItems: "center",

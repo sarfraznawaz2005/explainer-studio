@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { BrandStamp } from "../brand";
-import { VideoCode } from "./code";
+import { CaptionStyle } from "./captions";
+import { CodeTweaks, VideoCode } from "./code";
 import { LookRecipe } from "./look";
 import { SCENE_PROPS } from "./scene-props";
 
@@ -94,6 +95,12 @@ export const Scene = z.discriminatedUnion("type", [
 	sceneOf("figure"),
 	sceneOf("pause"),
 	sceneOf("quiz"),
+	sceneOf("lowerthird"),
+	sceneOf("device"),
+	sceneOf("chat"),
+	sceneOf("social"),
+	sceneOf("cta"),
+	sceneOf("logo"),
 	sceneOf("svg"),
 ]);
 export type Scene = z.infer<typeof Scene>;
@@ -132,10 +139,14 @@ export const PlanMeta = z.object({
 	look: LookRecipe.optional(),
 	/** The "code" style's video code, written by the AI for this video. Missing: the video uses the built-in scenes. */
 	code: VideoCode.optional(),
+	/** Quick changes to the "code" style's design (no AI call). */
+	tweaks: CodeTweaks.optional(),
 	voice: z.string().max(64).optional(),
 	fps: z.union([z.literal(30), z.literal(60)]).default(30),
 	width: z.number().int().min(320).max(3840).default(1920),
 	height: z.number().int().min(240).max(2160).default(1080),
+	/** Burned-in captions, a few words at a time while the voice speaks. */
+	captions: CaptionStyle.default("off"),
 	/** Speaking speed used to estimate sentences that have no voice yet. */
 	wordsPerMinute: z.number().int().min(80).max(260).default(150),
 	brandKitId: z.string().max(64).optional(),

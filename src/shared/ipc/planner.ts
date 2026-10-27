@@ -3,6 +3,10 @@ import { LookRecipe } from "../plan/look";
 import { SCENE_TYPES, VideoPlan, type SceneType } from "../plan/schema";
 import { Estimate, Outline, PlanSettings, PlanStep, QualityReport, TopicRequest } from "../planner";
 import { defineChannel, Ok } from "./channels";
+import { PartId } from "../code-preview";
+
+/** One part of an AI design the user clicked: its data-id and the words it shows. Only that part changes. */
+const DesignPart = z.object({ id: PartId, text: z.string().max(200) });
 
 const Id = z.uuid();
 
@@ -72,9 +76,9 @@ export const plannerChannels = {
 	/** Designs a new AI free-form look and returns it (the Studio saves it as an edit, so it can be undone). */
 	newLook: defineChannel("planner:look:new", z.object({ draftId: Id, wish: z.string().trim().max(300).optional(), confirmedCost: z.boolean() }), z.object({ look: LookRecipe })),
 	/** Cost and time of new AI design code ("AI free-form" style). change: change the current code instead of a new design. */
-	codeEstimate: defineChannel("planner:code:estimate", z.object({ draftId: Id, wish: CodeWish, change: z.boolean() }), Estimate),
+	codeEstimate: defineChannel("planner:code:estimate", z.object({ draftId: Id, wish: CodeWish, change: z.boolean(), part: DesignPart.optional() }), Estimate),
 	/** Writes AI design code in the background (test-drawn and fixed), then saves it to the plan. The Studio brings it in as one undo step. */
-	newCode: defineChannel("planner:code:new", z.object({ draftId: Id, wish: CodeWish, change: z.boolean(), seenErrors: z.array(z.string().max(600)).max(10).optional(), confirmedCost: z.boolean() }), z.object({ jobId: z.string() })),
+	newCode: defineChannel("planner:code:new", z.object({ draftId: Id, wish: CodeWish, change: z.boolean(), part: DesignPart.optional(), seenErrors: z.array(z.string().max(600)).max(10).optional(), confirmedCost: z.boolean() }), z.object({ jobId: z.string() })),
 	/** Cost and time of writing the material from a topic. */
 	topicEstimate: defineChannel("planner:topic:estimate", TopicRequest, Estimate),
 	/** Writes the material from a topic in the background. Progress and the new draft come as ingest updates, like reading files. */

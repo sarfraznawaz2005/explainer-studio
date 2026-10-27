@@ -158,6 +158,14 @@ export function MapScene({ heading, view, pins, route }: PropsOf<"map">) {
 	const intro = useAppear(0, { damping: 200 });
 	const ocean = s.dark ? "rgba(255,255,255,0.035)" : `${s.accent3}14`;
 	const land = s.dark ? "rgba(255,255,255,0.13)" : s.hand ? "rgba(0,0,0,0.04)" : s.surface;
+	const detailW = vertical ? 260 : 360;
+	const places = placeLabels(
+		pins.map((p) => ({ x: sx(p.lon), y: sy(p.lat), label: p.label, detail: p.detail })),
+		W,
+		H,
+		vertical ? 300 : 380,
+		detailW,
+	);
 	const grat: string[] = [];
 	for (let lon = -180; lon <= 180; lon += 30) grat.push(`M ${mx(lon)} ${my(85)} V ${my(-85)}`);
 	for (let lat = -60; lat <= 60; lat += 30) grat.push(`M ${mx(-180)} ${my(lat)} H ${mx(180)}`);
@@ -183,14 +191,60 @@ export function MapScene({ heading, view, pins, route }: PropsOf<"map">) {
 					</svg>
 				) : null}
 				{pins.map((p, k) => (
-					<MapPin key={k} index={k} at={frames[k]!} x={sx(p.lon)} y={sy(p.lat)} label={p.label} detail={p.detail} flip={sx(p.lon) > W - (vertical ? 300 : 380)} />
+					<MapPin key={k} index={k} at={frames[k]!} x={sx(p.lon)} y={sy(p.lat)} label={p.label} detail={p.detail} place={places[k]!} detailW={detailW} />
 				))}
 			</div>
 		</SceneFrame>
 	);
 }
 
-function MapPin({ index, at, x, y, label, detail, flip }: { index: number; at: number; x: number; y: number; label: string; detail?: string; flip: boolean }) {
+/** Where a pin's card goes: to the right or left of the pin, moved up or down from the usual spot. */
+type LabelPlace = { flip: boolean; dy: number };
+
+/**
+ * Cards for the pins, placed in pin order so they do not cover each other:
+ * each card tries the usual spot (right of the pin, or left near the right
+ * edge), then the other side, then below and above, and takes the first spot
+ * that is free and inside the map; when none is, the spot that covers least.
+ * Card sizes are estimated from the text.
+ */
+export function placeLabels(pins: { x: number; y: number; label: string; detail?: string }[], W: number, H: number, flipZone: number, detailW: number): LabelPlace[] {
+	const placed: { x0: number; y0: number; x1: number; y1: number }[] = [];
+	return pins.map((p) => {
+		const detailText = p.detail ? Math.min(detailW, p.detail.length * 22 * 0.52) : 0;
+		const w = Math.max(p.label.length * 30 * 0.6, detailText) + 40;
+		const lines = p.detail ? Math.ceil((p.detail.length * 22 * 0.52) / detailW) : 0;
+		const h = 24 + 36 + lines * 27.5;
+		const prefer = p.x > W - flipZone;
+		const tries: LabelPlace[] = [
+			{ flip: prefer, dy: -44 },
+			{ flip: !prefer, dy: -44 },
+			{ flip: prefer, dy: 24 },
+			{ flip: !prefer, dy: 24 },
+			{ flip: prefer, dy: -52 - h },
+			{ flip: !prefer, dy: -52 - h },
+			{ flip: prefer, dy: 32 + h },
+			{ flip: !prefer, dy: 32 + h },
+		];
+		const boxOf = (t: LabelPlace) => {
+			const x0 = t.flip ? p.x - 30 - w : p.x + 30;
+			return { x0, y0: p.y + t.dy, x1: x0 + w, y1: p.y + t.dy + h };
+		};
+		// How much a spot covers other cards (with a small gap) or leaves the map; 0 = free.
+		const cost = (b: ReturnType<typeof boxOf>) => {
+			const out = Math.max(0, -b.x0) + Math.max(0, b.x1 - W) + Math.max(0, -b.y0) + Math.max(0, b.y1 - H);
+			const covered = placed.reduce((sum, o) => sum + Math.max(0, Math.min(b.x1, o.x1) + 6 - Math.max(b.x0, o.x0)) * Math.max(0, Math.min(b.y1, o.y1) + 6 - Math.max(b.y0, o.y0)), 0);
+			return out * 1000 + covered;
+		};
+		const costs = tries.map((t) => cost(boxOf(t)));
+		const pick = tries[costs.indexOf(Math.min(...costs))]!;
+		placed.push(boxOf(pick));
+		return pick;
+	});
+}
+
+function MapPin({ index, at, x, y, label, detail, place, detailW }: { index: number; at: number; x: number; y: number; label: string; detail?: string; place: LabelPlace; detailW: number }) {
+	const { flip, dy } = place;
 	const s = useStyle();
 	const frame = useCurrentFrame();
 	const { fps } = useVideoConfig();
@@ -207,10 +261,10 @@ function MapPin({ index, at, x, y, label, detail, flip }: { index: number; at: n
 				<path d="M22 58 C 22 58 2 34 2 22 A 20 20 0 1 1 42 22 C 42 34 22 58 22 58 Z" fill={color} stroke={s.dark ? s.bg : "#ffffff"} strokeWidth={3} />
 				<circle cx={22} cy={22} r={7} fill={s.dark ? s.bg : "#ffffff"} />
 			</svg>
-			<div style={{ position: "absolute", top: y - 44, left: flip ? undefined : x + 30, right: flip ? `calc(100% - ${x - 30}px)` : undefined, opacity: card, transform: `translateX(${(1 - card) * (flip ? 16 : -16)}px)` }}>
+			<div style={{ position: "absolute", top: y + dy, left: flip ? undefined : x + 30, right: flip ? `calc(100% - ${x - 30}px)` : undefined, opacity: card, transform: `translateX(${(1 - card) * (flip ? 16 : -16)}px)` }}>
 				<div style={{ background: s.surface, ...borders(outline(s, color)), borderRadius: Math.min(14, s.radius), padding: "10px 18px", boxShadow: s.shadow, whiteSpace: "nowrap" }}>
 					<div style={{ fontSize: 30, fontWeight: 800, color: s.text }}>{label}</div>
-					{detail ? <div style={{ fontSize: 22, color: s.muted, maxWidth: 360, whiteSpace: "normal", lineHeight: 1.25 }}>{detail}</div> : null}
+					{detail ? <div style={{ fontSize: 22, color: s.muted, maxWidth: detailW, whiteSpace: "normal", lineHeight: 1.25 }}>{detail}</div> : null}
 				</div>
 			</div>
 		</>
@@ -287,7 +341,8 @@ export function DialogueScene({ setting, characters, lines }: PropsOf<"dialogue"
 	const talking = k >= 0 && frame < talkEnd ? lines[k]!.who : -1;
 	const two = characters.length === 2;
 	const intro = useAppear(0, { damping: 200 });
-	const charW = 300;
+	// Short narrow frames (square, 4:5) get smaller characters, so the talk above them has room.
+	const charW = vertical ? Math.round(Math.min(300, Math.max(190, H * 0.25))) : 300;
 	return (
 		<SceneFrame center>
 			<div style={{ position: "relative", width: contentW, height: H }}>

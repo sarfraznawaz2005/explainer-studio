@@ -28,7 +28,7 @@ import { useNarration } from "@renderer/stores/narration";
 import { usePlanner } from "@renderer/stores/planner";
 import { RegenerateDialog } from "./edit-panel";
 import { LookButton } from "./look-button";
-import { CodeButton, CodeDialog, CodeErrors, type SeenError } from "./code-button";
+import { CodeButton, CodeDialog, CodeErrors, CodeTweaksBar, hasParts, PickPartButton, type DesignPart, type SeenError } from "./code-button";
 import { SandboxPlayer, type PreviewHandle, type SandboxProps } from "./sandbox-player";
 import { Inspector, type InspectorEdit } from "./inspector";
 import { RenderButton } from "./render-dialog";
@@ -39,8 +39,10 @@ import { SceneList } from "./scene-list";
 import { SoundControls } from "./sound-panel";
 import { TimelineStrip } from "./timeline-strip";
 import { VoiceControls } from "./voice-panel";
+import { CAPTION_STYLES, type CaptionStyle } from "@shared/plan/captions";
 
 const STYLE_OPTIONS = STYLE_IDS.map((value) => ({ value, label: STYLE_LABELS[value] }));
+const CAPTION_OPTIONS = (Object.keys(CAPTION_STYLES) as CaptionStyle[]).map((value) => ({ value, label: CAPTION_STYLES[value].label, hint: CAPTION_STYLES[value].hint || undefined }));
 const FORMAT_OPTIONS = (Object.keys(VIDEO_FORMATS) as VideoFormat[]).map((value) => ({ value, label: VIDEO_FORMATS[value].label, hint: VIDEO_FORMATS[value].hint }));
 
 /** The plan with one scene replaced (same id). */
@@ -402,6 +404,7 @@ function StudioEditor({
 	// In a draft the style is part of the plan (saved, undoable); the sample only previews.
 	// Every scene lays itself out for the frame shape, so switching keeps the script and only changes the picture.
 	const format = formatOf(plan.meta);
+	const setCaptions = (v: CaptionStyle) => editor && void editor.apply({ ...plan, meta: { ...plan.meta, captions: v } }, v === "off" ? "Captions off" : `Captions: ${CAPTION_STYLES[v].label}`);
 	const setFormat = (v: VideoFormat) => editor && void editor.apply({ ...plan, meta: { ...plan.meta, width: VIDEO_FORMATS[v].width, height: VIDEO_FORMATS[v].height } }, `Format: ${VIDEO_FORMATS[v].label}`);
 	const setStyle = (v: StyleId) => (editor ? void editor.apply({ ...plan, meta: { ...plan.meta, style: v } }, `Style: ${STYLE_LABELS[v]}`) : setSampleStyle(v));
 	// Open one second in: frame 0 is the start of a fade-in and looks blank.
@@ -417,6 +420,19 @@ function StudioEditor({
 	const codeMode = shownStyle === "code" && !!plan.meta.code;
 	const [codeErrors, setCodeErrors] = useState<SeenError[]>([]);
 	const [codeOpen, setCodeOpen] = useState(false);
+	// "Change one part": pick mode in the preview, then the part the user clicked.
+	const [picking, setPicking] = useState(false);
+	const [part, setPart] = useState<DesignPart | null>(null);
+	const togglePick = () => {
+		const on = !picking;
+		setPicking(on);
+		player.current?.pick?.(on);
+	};
+	const onPicked = (id: string, text: string) => {
+		setPicking(false);
+		setPart({ id, text });
+		setCodeOpen(true);
+	};
 	const codeSource = plan.meta.code?.source;
 	useEffect(() => setCodeErrors([]), [codeSource]);
 	const onCodeError = useCallback((message: string, scene: number) => setCodeErrors((e) => (e.some((x) => x.scene === scene && x.message === message) ? e : [...e, { scene, message }].slice(-20))), []);
@@ -587,11 +603,17 @@ function StudioEditor({
 							<Select<VideoFormat> ariaLabel="Video format" value={format} onChange={setFormat} disabled={editor.busy} options={FORMAT_OPTIONS} />
 						</div>
 					) : null}
+					{editor ? (
+						<div className="w-36">
+							<Select<CaptionStyle> ariaLabel="Captions" value={plan.meta.captions} onChange={setCaptions} disabled={editor.busy} options={CAPTION_OPTIONS} />
+						</div>
+					) : null}
 					<div className="w-32">
 						<Select<StyleId> ariaLabel="Visual style" value={shownStyle} onChange={setStyle} disabled={editor?.busy} options={STYLE_OPTIONS} />
 					</div>
 					{editor && style === "free" ? <LookButton draftId={editor.draftId} plan={plan} disabled={editor.busy} apply={editor.apply} /> : null}
 					{editor && style === "code" ? <CodeButton plan={plan} disabled={editor.busy} onOpen={() => setCodeOpen(true)} /> : null}
+					{editor && codeMode && hasParts(plan) ? <PickPartButton picking={picking} disabled={editor.busy} onToggle={togglePick} /> : null}
 					{!wide ? null : (
 						<Tooltip content={inspectorOpen ? "Hide details" : "Show details"}>
 							<Button variant="ghost" size="icon-sm" aria-label="Toggle details panel" aria-pressed={inspectorOpen} onClick={() => setInspectorOpen((v) => !v)}>
@@ -617,10 +639,10 @@ function StudioEditor({
 
 				<div className="min-w-0 flex-1 overflow-y-auto">
 					<div className="flex w-full flex-col gap-4 p-5">
-						{/* A vertical preview is as tall as fits the window, not as tall as the full width would make it. */}
-						<div className={cn("overflow-hidden rounded-xl border bg-black shadow-md", format === "vertical" && "mx-auto w-full max-w-[calc(72vh*9/16)]")}>
+						{/* A narrow preview (vertical, portrait, square) is as tall as fits the window, not as tall as the full width would make it. */}
+						<div className={cn("overflow-hidden rounded-xl border bg-black shadow-md", format !== "landscape" && "mx-auto w-full")} style={format !== "landscape" ? { maxWidth: `calc(72vh * ${plan.meta.width} / ${plan.meta.height})` } : undefined}>
 							{codeMode ? (
-								<SandboxPlayer ref={player} props={inputProps as SandboxProps} initialFrame={frame} onCodeError={onCodeError} style={{ width: "100%", aspectRatio: `${plan.meta.width} / ${plan.meta.height}` }} />
+								<SandboxPlayer ref={player} props={inputProps as SandboxProps} initialFrame={frame} onCodeError={onCodeError} onPicked={onPicked} style={{ width: "100%", aspectRatio: `${plan.meta.width} / ${plan.meta.height}` }} />
 							) : (
 								<Player
 									ref={player as unknown as React.Ref<PlayerRef>}
@@ -653,7 +675,19 @@ function StudioEditor({
 							</div>
 						) : null}
 						{codeMode ? <CodeErrors errors={codeErrors} onFix={() => setCodeOpen(true)} disabled={!editor || editor.busy} /> : null}
-						{editor && style === "code" ? <CodeDialog draftId={editor.draftId} plan={plan} open={codeOpen} onOpenChange={setCodeOpen} seenErrors={codeErrors} onStarted={editor.onRewriteStarted} /> : null}
+						{codeMode && editor ? <CodeTweaksBar plan={plan} disabled={editor.busy} onApply={(tweaks, label) => void editor.apply({ ...plan, meta: { ...plan.meta, tweaks } }, label)} /> : null}
+						{editor && style === "code" ? <CodeDialog
+								draftId={editor.draftId}
+								plan={plan}
+								open={codeOpen}
+								onOpenChange={(o) => {
+									setCodeOpen(o);
+									if (!o) setPart(null);
+								}}
+								seenErrors={codeErrors}
+								onStarted={editor.onRewriteStarted}
+								part={part}
+							/> : null}
 
 						<div className="flex items-center gap-1.5">
 							<Tooltip content="Previous scene  [">

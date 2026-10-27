@@ -1,12 +1,13 @@
 import { z } from "zod";
-import { BulletsProps, ChartProps, CodeProps, DiagramLabels, FigureFile, FigureProps, FlowProps, SCENE_PROPS, SummaryProps, SvgMarkup, VideoPlan, type Scene, type SceneType, type VideoPlanInput } from "@shared/plan/schema";
+import { BulletsProps, ChartProps, CodeProps, DeviceProps, DiagramLabels, FigureFile, FigureProps, FlowProps, LogoProps, SCENE_PROPS, SummaryProps, SvgMarkup, VideoPlan, type Scene, type SceneType, type VideoPlanInput } from "@shared/plan/schema";
 import { SCENE_LABELS } from "@shared/plan/describe";
-import { languageLabel, VIDEO_FORMATS, type Outline, type PlanSettings } from "@shared/planner";
+import { languageLabel, VIDEO_FORMATS, type Outline, type PlanSettings, type VideoType } from "@shared/planner";
 import type { Source } from "@shared/source";
 import { describeIssues } from "../ai/structured";
 import type { PlannerAi } from "./ai";
 import { audienceFor, audienceRules, type Audience } from "./audience";
 import { CHAPTER_SOURCE_CHARS, mapForPrompt, sourceForPrompt, type KnowledgeChunk } from "./knowledge";
+import { scriptGuide } from "./video-types";
 
 /**
  * One chapter of the outline → narration and scenes. The model picks scene
@@ -47,7 +48,11 @@ export function chapterPictures(figures: FigureRef[], chapters: number, index: n
 }
 
 /** Scene types the model may choose from: the level's list without the cards it never writes (and no figure scenes without figures). */
-export const contentTypes = (a: Audience, figures: FigureRef[] = []) => a.scenes.filter((t) => t !== "title" && t !== "chapter" && (t !== "figure" || figures.length > 0));
+/** Scene types for ads and announcements: offered only in launch and promo videos. */
+export const PROMO_TYPES: ReadonlySet<SceneType> = new Set(["lowerthird", "social", "cta", "logo"]);
+
+export const contentTypes = (a: Audience, figures: FigureRef[] = [], videoType: VideoType = "explainer") =>
+	a.scenes.filter((t) => t !== "title" && t !== "chapter" && (t !== "figure" || figures.length > 0) && (!PROMO_TYPES.has(t) || videoType === "launch" || videoType === "promo"));
 
 function propsFor(type: SceneType, a: Audience, figures: FigureRef[]): z.ZodType {
 	const n = a.maxItems;
@@ -72,6 +77,10 @@ function propsFor(type: SceneType, a: Audience, figures: FigureRef[]): z.ZodType
 			return z
 				.object({ heading: z.string().max(120).optional(), figure: figureId.optional(), svg: SvgMarkup.optional(), labels: DiagramLabels })
 				.refine((p) => !!p.figure !== !!p.svg, { message: "give either figure or svg (one of them)", path: ["svg"] });
+		case "device":
+			return DeviceProps.extend({ figure: figureId.optional() });
+		case "logo":
+			return LogoProps.extend({ figure: figureId.optional() });
 		case "title":
 		case "chapter":
 			throw new Error(`scene type ${type} is not written by the model`);
@@ -126,6 +135,12 @@ export const SCENE_GUIDE: Partial<Record<SceneType, string>> = {
 	figure: "a figure from the source (by id) with a slow zoom and up to 5 numbered callouts at x,y (percent). Only when the figure shows the idea.",
 	pause: "a question to the viewer, then silent thinking time (seconds), then the answer. The first narration sentence asks the question; the next ones explain the answer.",
 	quiz: "1 to 4 multiple-choice questions with the index of the right option; each gets thinking time before its answer shows. For a recap at the end of a chapter.",
+	lowerthird: "a name bar at the bottom (name and role) under an optional big statement. To introduce a person or quote someone by name. Mostly for launch and promo videos.",
+	device: "a phone or browser window showing a figure from the list (by id) or a simple app screen with 1 to 5 items that appear one by one; url for the browser bar. To show a product, an app or a website at work.",
+	chat: "1 to 8 chat messages between 'me' and 'them' that appear one by one, as in a messaging app; title names the other side. For a customer question, a support talk or a real-life exchange.",
+	social: "a social post or review card: author, handle, the words (read along with the voice), stars 1 to 5 for a review, likes and shares. Only with words and numbers from the material. Mostly for launch and promo videos.",
+	cta: "the end card: a headline, up to 3 short points, a button with the action (2 to 4 words) and the detail (a web address or handle) from the material. Only as the last scene of a launch or promo video.",
+	logo: "a logo sting: the name, a tagline, and a figure from the list (by id) when it is the logo. Only at the very start or end of a launch or promo video.",
 	svg: "your own simple drawing: SVG markup with a viewBox, using only shapes (rect circle ellipse line polyline polygon path text g), gradients and ids. No script, style element, image, links, event handlers or external references. Colours may be the words accent, accent2, accent3, positive, ink, muted, paper so the drawing follows the video style. animations move elements by id (from/to: opacity, x, y, scale, rotate, draw for strokes, fill), starting at a narration sentence. For anything the other types cannot show.",
 };
 
@@ -137,7 +152,7 @@ export function scriptSystem(s: PlanSettings, figures: FigureRef[] = []): string
 		audienceRules(a),
 		"",
 		`Scene types you can use (at this level only these):`,
-		...contentTypes(a, figures).map((t) => `- ${t} (${SCENE_LABELS[t]}): ${SCENE_GUIDE[t]}`),
+		...contentTypes(a, figures, s.videoType).map((t) => `- ${t} (${SCENE_LABELS[t]}): ${SCENE_GUIDE[t]}`),
 		"",
 		"Rules for scenes:",
 		"- Pick the scene type that shows the idea best. Vary the types; do not use the same type more than twice in a row.",
@@ -150,6 +165,15 @@ export function scriptSystem(s: PlanSettings, figures: FigureRef[] = []): string
 		"- Copy code, numbers and definitions exactly from the material.",
 		"- `intro` is one sentence spoken on the chapter card that says what the chapter is about.",
 		`- Write all narration and on-screen text in ${languageLabel(s.language)}. Tone: ${s.tone}.`,
+		...(s.format === "square" || s.format === "portrait"
+			? [
+					"",
+					`This is a ${s.format === "square" ? "square (1:1)" : "portrait (4:5)"} video for social feeds (Instagram, Facebook, LinkedIn), mostly watched small on a phone, often without sound at first.`,
+					"- Keep on-screen text short: labels of 1 to 5 words, and at most 5 items in a scene.",
+					"- Prefer scenes with one clear idea. Tables get at most 3 columns.",
+					"- Make the first scene grab attention: the main promise or question, in big words.",
+				]
+			: []),
 		...(s.format === "vertical"
 			? [
 					"",
@@ -159,6 +183,7 @@ export function scriptSystem(s: PlanSettings, figures: FigureRef[] = []): string
 					"- Grab attention in the first sentence of every scene. Keep the pace quick.",
 				]
 			: []),
+		...scriptGuide(s),
 		...(figures.length ? ["", "Figures and photos you may show (id, kind: caption):", ...figures.slice(0, 40).map((f) => `- ${f.id} (${kindOf(f)}): ${f.caption ?? "(no caption)"}`)] : []),
 	].join("\n");
 }
@@ -220,7 +245,7 @@ const clip = (t: string, max: number) => (t.length <= max ? t : `${t.slice(0, ma
 
 /** Fixes small things the schema cannot express: code line ranges, chart highlights, figure ids → files. */
 export function tidyProps(type: SceneType, props: Record<string, unknown>, figures: FigureRef[] = []): Record<string, unknown> {
-	if ((type === "figure" || type === "diagram") && typeof props.figure === "string") {
+	if ((type === "figure" || type === "diagram" || type === "device" || type === "logo") && typeof props.figure === "string") {
 		const f = figures.find((x) => x.id === props.figure);
 		return { ...props, figure: f?.file ?? props.figure };
 	}

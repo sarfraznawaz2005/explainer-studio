@@ -1,5 +1,5 @@
 import { LOOK_BACKGROUNDS, LOOK_ENTERS, LOOK_FONTS, LookRecipe, lookSummary } from "@shared/plan/look";
-import { languageLabel } from "@shared/planner";
+import { languageLabel, type VideoFormat } from "@shared/planner";
 import { jsonInstructions } from "../ai/structured";
 import type { PlannerAi } from "./ai";
 import type { EstimateCall } from "./estimate";
@@ -16,7 +16,7 @@ export type LookBrief = {
 	level: string;
 	tone: string;
 	language: string;
-	vertical: boolean;
+	format: VideoFormat;
 	/** Looks this video had before: the new one must differ. */
 	avoid?: string[];
 	/** What the user wants, in their words ("darker", "like a retro poster"). */
@@ -45,12 +45,20 @@ export const LOOK_SYSTEM = [
 	"- Older and serious audiences: calm motion, less bounce. Young children: bright, friendly, lively.",
 ].join("\n");
 
+/** The frame, as the look and code prompts describe it. */
+export const FRAME_WORDS: Record<VideoFormat, string> = {
+	landscape: "wide 16:9 (YouTube, web)",
+	vertical: "vertical 9:16 for phones (Shorts, TikTok, Reels): bold and high contrast reads best on small screens",
+	square: "square 1:1 for social feeds (Instagram, LinkedIn, X), mostly seen small on phones: bold and high contrast",
+	portrait: "portrait 4:5 for social feeds (Instagram, Facebook), mostly seen small on phones: bold and high contrast",
+};
+
 export function lookPrompt(b: LookBrief): string {
 	return [
 		`Video title: ${b.title}`,
 		b.subject ? `Subject: ${b.subject}` : "",
 		`Audience level: ${b.level}. Tone: ${b.tone}. Language of the text: ${languageLabel(b.language)}.`,
-		`Frame: ${b.vertical ? "vertical 9:16 for phones (Shorts, TikTok, Reels): bold and high contrast reads best on small screens" : "wide 16:9 (YouTube)"}.`,
+		`Frame: ${FRAME_WORDS[b.format]}.`,
 		b.avoid?.length ? `Looks used before (make something clearly different):\n${b.avoid.map((a) => `- ${a}`).join("\n")}` : "",
 		b.wish ? `What the user asks for (follow it): ${b.wish}` : "",
 	]

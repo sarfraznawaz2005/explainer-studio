@@ -66,17 +66,18 @@ export function FlowScene({ heading, steps, direction }: PropsOf<"flow">) {
 	);
 }
 
-function Column({ side, title, points, color }: { side: 0 | 1; title: string; points: string[]; color: string }) {
+/** One side of a comparison. Compact: side by side in a narrow (square) frame. */
+function Column({ side, title, points, color, compact }: { side: 0 | 1; title: string; points: string[]; color: string; compact?: boolean }) {
 	const s = useStyle();
 	const at = useRevealAt(side);
 	const p = useAppear(at);
 	return (
 		<div style={{ ...appearStyle(p, 40, s.motion), flex: 1, minWidth: 0 }}>
-			<Surface style={{ padding: "44px 52px", height: "100%" }}>
-				<div style={{ fontFamily: s.headingFont, fontSize: 56, fontWeight: s.headingWeight, color, marginBottom: 32 }}>{title}</div>
-				<div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+			<Surface style={{ padding: compact ? "30px 32px" : "44px 52px", height: "100%" }}>
+				<div style={{ fontFamily: s.headingFont, fontSize: compact ? 44 : 56, fontWeight: s.headingWeight, color, marginBottom: compact ? 20 : 32 }}>{title}</div>
+				<div style={{ display: "flex", flexDirection: "column", gap: compact ? 16 : 24 }}>
 					{points.map((pt, i) => (
-						<PointRow key={i} at={at + 8 + i * 6} color={color} text={pt} />
+						<PointRow key={i} at={at + 8 + i * 6} color={color} text={pt} size={compact ? 32 : 40} />
 					))}
 				</div>
 			</Surface>
@@ -84,12 +85,12 @@ function Column({ side, title, points, color }: { side: 0 | 1; title: string; po
 	);
 }
 
-function PointRow({ at, color, text }: { at: number; color: string; text: string }) {
+function PointRow({ at, color, text, size = 40 }: { at: number; color: string; text: string; size?: number }) {
 	const s = useStyle();
 	const p = useAppear(at);
 	return (
-		<div style={{ ...appearStyle(p, 14, s.motion), display: "flex", gap: 22, alignItems: "flex-start", fontSize: 40, lineHeight: 1.3 }}>
-			<div style={{ flexShrink: 0, width: 16, height: 16, borderRadius: 99, background: color, marginTop: 16 }} />
+		<div style={{ ...appearStyle(p, 14, s.motion), display: "flex", gap: 22, alignItems: "flex-start", fontSize: size, lineHeight: 1.3 }}>
+			<div style={{ flexShrink: 0, width: 16, height: 16, borderRadius: 99, background: color, marginTop: Math.round(size * 0.4) }} />
 			<div>{text}</div>
 		</div>
 	);
@@ -100,13 +101,14 @@ export function CompareScene({ heading, left, right, verdict }: PropsOf<"compare
 	const rightAt = useRevealAt(1);
 	const vs = useAppear(rightAt - 6, { damping: 12 });
 	const verdictP = useAppear(verdict ? rightAt + 30 : null);
-	// Tall frames stack the two sides, with VS between them.
-	const { vertical } = useLayout();
+	// Tall frames stack the two sides, with VS between them. Square frames are too short for that: side by side.
+	const { shape } = useLayout();
+	const vertical = shape === "vertical" || shape === "portrait";
 	return (
 		<SceneFrame heading={heading}>
 			<div style={{ ...texture(s), display: "flex", flexDirection: "column", gap: 36, flex: vertical ? undefined : 1, minHeight: 0 }}>
 				<div style={{ display: "flex", flexDirection: vertical ? "column" : "row", gap: vertical ? 56 : 40, alignItems: "stretch", position: "relative" }}>
-					<Column side={0} title={left.title} points={left.points} color={s.accent} />
+					<Column side={0} title={left.title} points={left.points} color={s.accent} compact={shape === "square"} />
 					<div
 						style={{
 							position: "absolute",
@@ -129,10 +131,10 @@ export function CompareScene({ heading, left, right, verdict }: PropsOf<"compare
 					>
 						VS
 					</div>
-					<Column side={1} title={right.title} points={right.points} color={s.accent2} />
+					<Column side={1} title={right.title} points={right.points} color={s.accent2} compact={shape === "square"} />
 				</div>
 				{verdict ? (
-					<div style={{ ...appearStyle(verdictP, 16, s.motion), fontSize: 40, textAlign: "center", color: s.muted }}>
+					<div style={{ ...appearStyle(verdictP, 16, s.motion), fontSize: shape === "square" ? 34 : 40, textAlign: "center", color: s.muted }}>
 						<span style={{ color: s.positive, fontWeight: 700 }}>In short: </span>
 						{verdict}
 					</div>

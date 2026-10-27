@@ -11,17 +11,22 @@ export const PREVIEW_SCHEME = "es-preview";
 export const PREVIEW_ORIGIN = `${PREVIEW_SCHEME}://app`;
 export const PREVIEW_PAGE = "/code-preview.html";
 
+/** A part of an AI design, named by the code's data-id attribute ("s3-title"). */
+export const PartId = z.string().regex(/^[A-Za-z][\w.:-]{0,59}$/);
+
 /** Sandbox → app. */
 export const FromPreview = z.discriminatedUnion("type", [
 	z.object({ type: z.literal("ready") }),
 	z.object({ type: z.enum(["frame", "seeked"]), frame: z.number().int().min(0).max(10_000_000) }),
 	z.object({ type: z.enum(["play", "pause", "ended"]) }),
 	z.object({ type: z.literal("code-error"), message: z.string().max(2000), scene: z.number().int().min(-1).max(10_000) }),
+	/** Pick mode: the user clicked a part of the picture that has a data-id. */
+	z.object({ type: z.literal("picked"), id: PartId, text: z.string().max(200) }),
 ]);
 export type FromPreview = z.infer<typeof FromPreview>;
 
 /** App → sandbox. Props are PlanVideoProps (checked again there by the plan schema). */
-export type ToPreview = { type: "props"; props: Record<string, unknown>; initialFrame?: number } | { type: "seek"; frame: number } | { type: "toggle" };
+export type ToPreview = { type: "props"; props: Record<string, unknown>; initialFrame?: number } | { type: "seek"; frame: number } | { type: "toggle" } | { type: "pick"; on: boolean };
 
 /** One problem the test draw found. scene -1 = the whole file. */
 export const CheckIssue = z.object({ frame: z.number().int(), scene: z.number().int(), message: z.string().max(2000) });

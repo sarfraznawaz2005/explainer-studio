@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { Level } from "./ipc/ingest";
+import { shapeOf } from "./plan/frame";
 import { StyleId } from "./plan/schema";
 
 /**
@@ -39,17 +40,34 @@ export function lengthLabel(minutes: number): string {
 	return s ? `${m} min ${s} s` : `${m} minute${m === 1 ? "" : "s"}`;
 }
 
-/** Picture shape. Vertical is for Shorts, TikTok and Reels (phones held upright). */
+/**
+ * Picture shape. Vertical is for Shorts, TikTok and Reels (phones held upright);
+ * square and portrait are for feeds (Instagram, Facebook, LinkedIn).
+ */
 export const VIDEO_FORMATS = {
 	landscape: { label: "Wide 16:9", hint: "YouTube, web", width: 1920, height: 1080 },
 	vertical: { label: "Vertical 9:16", hint: "Shorts, TikTok, Reels", width: 1080, height: 1920 },
+	square: { label: "Square 1:1", hint: "Instagram, LinkedIn, X feeds", width: 1080, height: 1080 },
+	portrait: { label: "Portrait 4:5", hint: "Instagram, Facebook feeds", width: 1080, height: 1350 },
 } as const;
-export const VideoFormat = z.enum(["landscape", "vertical"]);
+export const VideoFormat = z.enum(["landscape", "vertical", "square", "portrait"]);
 export type VideoFormat = z.infer<typeof VideoFormat>;
-export const formatOf = (meta: { width: number; height: number }): VideoFormat => (meta.height > meta.width ? "vertical" : "landscape");
+/** The format nearest to a frame size (any size: older plans and hand-edited ones too). */
+export const formatOf = (meta: { width: number; height: number }): VideoFormat => shapeOf(meta.width, meta.height);
+
+/** What kind of video: it sets the planner's structure, pacing and scene choices. */
+export const VIDEO_TYPES = {
+	explainer: { label: "Explainer", hint: "Teach the material, step by step" },
+	launch: { label: "Launch", hint: "Announce something new: what it is, why it matters" },
+	data: { label: "Data story", hint: "Tell the story in the numbers" },
+	promo: { label: "Promo", hint: "A short ad with a call to action" },
+} as const;
+export const VideoType = z.enum(["explainer", "launch", "data", "promo"]);
+export type VideoType = z.infer<typeof VideoType>;
 
 export const PlanSettings = z.object({
 	format: VideoFormat.default("landscape"),
+	videoType: VideoType.default("explainer"),
 	level: Level,
 	language: LanguageCode.default("en"),
 	tone: Tone.default("Friendly"),

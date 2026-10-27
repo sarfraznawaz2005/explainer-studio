@@ -4,10 +4,11 @@ import { Player, Thumbnail, type PlayerRef } from "@remotion/player";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { createRoot } from "react-dom/client";
-import { checkFrames, type CheckIssue, type CheckResult, type FromPreview, type ToPreview } from "@shared/code-preview";
+import { checkFrames, PartId, type CheckResult, type FromPreview, type ToPreview } from "@shared/code-preview";
 import { VideoPlan } from "@shared/plan/schema";
 import { computeTimeline } from "@shared/plan/timing";
 import { allowVideoCode } from "@video/code/runtime";
+import { inspect, motionPass, short, tick, type Out } from "./checks";
 import { PlanVideo, planMetadata, type PlanVideoProps } from "@video/plan/PlanVideo";
 
 /**
@@ -33,11 +34,58 @@ function PreviewPlayer() {
 			if (m?.type === "props") setState((s) => ({ props: m.props as PlanVideoProps, initialFrame: s?.initialFrame ?? Math.max(0, Number(m.initialFrame) || 0) }));
 			else if (m?.type === "seek") player.current?.seekTo(Math.max(0, Number(m.frame) || 0));
 			else if (m?.type === "toggle") player.current?.toggle();
+			else if (m?.type === "pick") setPicking(m.on === true);
 		};
 		window.addEventListener("message", onMessage);
 		send({ type: "ready" });
 		return () => window.removeEventListener("message", onMessage);
 	}, []);
+
+	// Pick mode: the part (an element with a data-id) under the pointer is outlined; a click sends its id.
+	const [picking, setPicking] = useState(false);
+	const [hover, setHover] = useState<DOMRect | null>(null);
+	useEffect(() => {
+		if (!picking) {
+			setHover(null);
+			return;
+		}
+		player.current?.pause();
+		// The player lays a click layer over the picture and the picture takes no pointer hits:
+		// the part is the smallest named element whose box holds the point.
+		const partAt = (e: MouseEvent) => {
+			let best: HTMLElement | null = null;
+			let bestArea = Infinity;
+			for (const el of document.querySelectorAll<HTMLElement>("[data-id]")) {
+				const r = el.getBoundingClientRect();
+				const area = r.width * r.height;
+				if (area > 0 && area < bestArea && e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom) {
+					best = el;
+					bestArea = area;
+				}
+			}
+			return best;
+		};
+		const onMove = (e: MouseEvent) => setHover(partAt(e)?.getBoundingClientRect() ?? null);
+		const onClick = (e: MouseEvent) => {
+			// Before the player's own click (play/pause).
+			e.preventDefault();
+			e.stopPropagation();
+			const el = partAt(e);
+			const id = el?.getAttribute("data-id") ?? "";
+			if (!el || !PartId.safeParse(id).success) return;
+			send({ type: "picked", id, text: (el.innerText || el.textContent || "").replace(/\s+/g, " ").trim().slice(0, 200) });
+			setPicking(false);
+		};
+		const onKey = (e: KeyboardEvent) => e.key === "Escape" && setPicking(false);
+		window.addEventListener("mousemove", onMove, true);
+		window.addEventListener("click", onClick, true);
+		window.addEventListener("keydown", onKey, true);
+		return () => {
+			window.removeEventListener("mousemove", onMove, true);
+			window.removeEventListener("click", onClick, true);
+			window.removeEventListener("keydown", onKey, true);
+		};
+	}, [picking]);
 
 	const ready = !!state;
 	useEffect(() => {
@@ -93,6 +141,19 @@ function PreviewPlayer() {
 	if (!state || !inputProps) return null;
 	const meta = planMetadata(state.props.plan);
 	return (
+		<>
+			<PlayerOf meta={meta} player={player} state={state} inputProps={inputProps} />
+			{picking ? (
+				<div style={{ position: "fixed", inset: 0, cursor: "crosshair", pointerEvents: "none", zIndex: 10 }}>
+					{hover ? <div style={{ position: "fixed", left: hover.left - 3, top: hover.top - 3, width: hover.width + 6, height: hover.height + 6, border: "3px solid #f59e0b", borderRadius: 6, background: "rgba(245,158,11,0.12)" }} /> : null}
+				</div>
+			) : null}
+		</>
+	);
+}
+
+function PlayerOf({ meta, player, state, inputProps }: { meta: ReturnType<typeof planMetadata>; player: React.RefObject<PlayerRef | null>; state: { initialFrame: number }; inputProps: PlanVideoProps }) {
+	return (
 		<Player
 			ref={player}
 			initialFrame={Math.min(state.initialFrame, meta.durationInFrames - 1)}
@@ -115,57 +176,11 @@ function PreviewPlayer() {
 
 /* ---------- Test draw ---------- */
 
-const tick = () => new Promise((r) => setTimeout(r, 0));
-const short = (s: string, n = 60) => (s.length > n ? `${s.slice(0, n)}…` : s);
-
-/** How see-through an element really is (its own opacity times its parents', up to the frame). */
-function opacityOf(el: Element, stop: Element): number {
-	let o = 1;
-	for (let e: Element | null = el; e && e !== stop; e = e.parentElement) o *= Number(getComputedStyle(e).opacity) || 0;
-	return o;
-}
-
-/** Problems in one drawn frame: NaN values, an empty picture, text outside the frame. */
-function inspect(frameBox: HTMLElement, frame: number, scene: number, settled: boolean, out: { errors: CheckIssue[]; warnings: CheckIssue[] }) {
-	const box = frameBox.getBoundingClientRect();
-	const all = [...frameBox.querySelectorAll("*")];
-	const bad = all.find((el) => [...el.attributes].some((a) => /\bNaN\b|\bInfinity\b/.test(a.value)));
-	if (bad) {
-		const a = [...bad.attributes].find((x) => /\bNaN\b|\bInfinity\b/.test(x.value))!;
-		out.errors.push({ frame, scene, message: `A value is NaN or Infinity: <${bad.tagName.toLowerCase()} ${a.name}="${short(a.value, 120)}">. Check the maths (division by zero, a missing prop, an empty list).` });
-	}
-	if (!settled) return;
-	const text = frameBox.innerText.trim();
-	const shapes = frameBox.querySelector("svg, img, canvas");
-	const filled = all.filter((el) => {
-		const cs = getComputedStyle(el);
-		return (cs.backgroundImage !== "none" || !/rgba\(0, 0, 0, 0\)|transparent/.test(cs.backgroundColor)) && el.getBoundingClientRect().width > 0;
-	}).length;
-	if (!text && !shapes && filled <= 1) out.warnings.push({ frame, scene, message: "The frame shows nothing but a background." });
-	let outside = 0;
-	// The text itself (its glyphs), not the box around it: a wide box with short text is fine.
-	const walker = document.createTreeWalker(frameBox, NodeFilter.SHOW_TEXT);
-	const range = document.createRange();
-	for (let n = walker.nextNode(); n && outside < 3; n = walker.nextNode()) {
-		const t = n.textContent?.trim();
-		const el = n.parentElement;
-		if (!t || !el) continue;
-		range.selectNodeContents(n);
-		const r = range.getBoundingClientRect();
-		if (r.width === 0 || r.height === 0) continue;
-		const off = r.left < box.left - 4 || r.right > box.right + 4 || r.top < box.top - 4 || r.bottom > box.bottom + 4;
-		if (off && opacityOf(el, frameBox) > 0.05) {
-			outside++;
-			out.warnings.push({ frame, scene, message: `Text "${short(t)}" goes outside the ${Math.round(box.width)}×${Math.round(box.height)} frame (it reaches x ${Math.round(r.left - box.left)} to ${Math.round(r.right - box.left)}, y ${Math.round(r.top - box.top)} to ${Math.round(r.bottom - box.top)}).` });
-		}
-	}
-}
-
 /** Draws the video at a few frames per scene and reports crashes and visible problems. */
 async function check(req: { plan: unknown; figureBase?: string }): Promise<CheckResult> {
-	const out = { errors: [] as CheckIssue[], warnings: [] as CheckIssue[] };
+	const out: Out = { errors: [], warnings: [], kinds: new Map() };
 	const parsed = VideoPlan.safeParse(req.plan);
-	if (!parsed.success) return { ...out, errors: [{ frame: 0, scene: -1, message: "The plan does not parse." }], frames: 0 };
+	if (!parsed.success) return { errors: [{ frame: 0, scene: -1, message: "The plan does not parse." }], warnings: [], frames: 0 };
 	const plan = parsed.data;
 	const timeline = computeTimeline(plan);
 	const { width, height } = plan.meta;
@@ -178,38 +193,43 @@ async function check(req: { plan: unknown; figureBase?: string }): Promise<Check
 		const issue = { frame: at.frame, scene: scene >= 0 ? scene : -1, message: short(message, 600) };
 		if (!out.errors.some((e) => e.scene === issue.scene && e.message === issue.message)) out.errors.push(issue);
 	};
-	const frames = checkFrames(timeline.scenes);
+	const draw = (frame: number, scene: number) => {
+		at = { frame, scene };
+		flushSync(() =>
+			root.render(
+				<Thumbnail
+					component={PlanVideo}
+					inputProps={{ plan, figureBase: req.figureBase, onCodeError } satisfies PlanVideoProps}
+					compositionWidth={width}
+					compositionHeight={height}
+					durationInFrames={timeline.durationInFrames}
+					fps={timeline.fps}
+					frameToDisplay={frame}
+					style={{ width, height }}
+				/>,
+			),
+		);
+	};
+	const fileFailed = () => out.errors.some((e) => e.scene === -1);
 	let drawn = 0;
 	try {
-		for (const f of frames) {
-			at = f;
-			flushSync(() =>
-				root.render(
-					<Thumbnail
-						component={PlanVideo}
-						inputProps={{ plan, figureBase: req.figureBase, onCodeError } satisfies PlanVideoProps}
-						compositionWidth={width}
-						compositionHeight={height}
-						durationInFrames={timeline.durationInFrames}
-						fps={timeline.fps}
-						frameToDisplay={f.frame}
-						style={{ width, height }}
-					/>,
-				),
-			);
+		for (const f of checkFrames(timeline.scenes)) {
+			draw(f.frame, f.scene);
 			await tick();
 			await tick();
 			drawn++;
 			// The file did not load: every frame is the built-in video, nothing more to learn.
-			if (out.errors.some((e) => e.scene === -1)) break;
+			if (fileFailed()) break;
 			inspect(host, f.frame, f.scene, f.settled, out);
 			if (out.errors.length >= 20) break;
 		}
+		// More frames: motion over time (frozen stretches, text shown too briefly); crashes there count too.
+		if (!fileFailed() && out.errors.length < 20) await motionPass(draw, host, timeline, out);
 	} finally {
 		root.unmount();
 		host.remove();
 	}
-	return { errors: out.errors, warnings: out.warnings.slice(0, 20), frames: drawn };
+	return { errors: out.errors.slice(0, 200), warnings: out.warnings.slice(0, 20), frames: drawn };
 }
 
 const mode = new URLSearchParams(window.location.search).get("mode");

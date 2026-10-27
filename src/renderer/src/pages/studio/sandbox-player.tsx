@@ -8,6 +8,8 @@ type Listener = (e: { detail: { frame: number } }) => void;
 export type PreviewHandle = {
 	seekTo(frame: number): void;
 	toggle(): void;
+	/** Pick mode (AI designs only): the next click on the picture names a part. */
+	pick?(on: boolean): void;
 	addEventListener(type: PreviewEvent, fn: Listener): void;
 	removeEventListener(type: PreviewEvent, fn: Listener): void;
 };
@@ -21,12 +23,12 @@ export type SandboxProps = Omit<PlanVideoProps, "onCodeError">;
  * strict policy with no network. The app talks to it by postMessage and checks
  * every message it gets back (FromPreview).
  */
-export const SandboxPlayer = forwardRef<PreviewHandle, { props: SandboxProps; initialFrame: number; style?: CSSProperties; onCodeError?: (message: string, scene: number) => void }>(function SandboxPlayer({ props, initialFrame, style, onCodeError }, ref) {
+export const SandboxPlayer = forwardRef<PreviewHandle, { props: SandboxProps; initialFrame: number; style?: CSSProperties; onCodeError?: (message: string, scene: number) => void; onPicked?: (id: string, text: string) => void }>(function SandboxPlayer({ props, initialFrame, style, onCodeError, onPicked }, ref) {
 	const frame = useRef<HTMLIFrameElement>(null);
 	const ready = useRef(false);
 	const listeners = useRef(new Map<PreviewEvent, Set<Listener>>());
-	const latest = useRef({ props, initialFrame, onCodeError });
-	latest.current = { props, initialFrame, onCodeError };
+	const latest = useRef({ props, initialFrame, onCodeError, onPicked });
+	latest.current = { props, initialFrame, onCodeError, onPicked };
 
 	const post = (m: ToPreview) => frame.current?.contentWindow?.postMessage(m, PREVIEW_ORIGIN);
 	const emit = (type: PreviewEvent, f = 0) => listeners.current.get(type)?.forEach((fn) => fn({ detail: { frame: f } }));
@@ -36,6 +38,7 @@ export const SandboxPlayer = forwardRef<PreviewHandle, { props: SandboxProps; in
 		() => ({
 			seekTo: (f) => post({ type: "seek", frame: f }),
 			toggle: () => post({ type: "toggle" }),
+			pick: (on) => post({ type: "pick", on }),
 			addEventListener: (type, fn) => {
 				const set = listeners.current.get(type) ?? new Set();
 				set.add(fn);
@@ -58,6 +61,7 @@ export const SandboxPlayer = forwardRef<PreviewHandle, { props: SandboxProps; in
 			} else if (m.type === "frame") emit("frameupdate", m.frame);
 			else if (m.type === "seeked") emit("seeked", m.frame);
 			else if (m.type === "code-error") latest.current.onCodeError?.(m.message, m.scene);
+			else if (m.type === "picked") latest.current.onPicked?.(m.id, m.text);
 			else emit(m.type);
 		};
 		window.addEventListener("message", onMessage);
