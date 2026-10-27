@@ -1,5 +1,15 @@
 [
   {
+    "version": "1.0.5",
+    "title": "Captions, Vertical Videos, Promo Scenes",
+    "changes": [
+      "Add captions to your videos so viewers can read along with the narration.",
+      "Make vertical videos for formats like Shorts, Reels and TikTok, not just wide screen.",
+      "Use new promo scenes to add eye-catching intro and call-to-action moments to your videos.",
+      "AI-made code scenes now get checked for layout, so code fits on screen and is easier to read."
+    ]
+  },
+  {
     "version": "1.0.4",
     "title": "AI-Designed Custom Scenes in Videos",
     "changes": [
