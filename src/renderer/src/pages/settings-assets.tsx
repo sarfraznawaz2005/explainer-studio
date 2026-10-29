@@ -1,5 +1,5 @@
 import { Link } from "@tanstack/react-router";
-import { CircleCheck, ExternalLink, FolderOpen, KeyRound, Layers, ShieldCheck } from "lucide-react";
+import { CircleCheck, ExternalLink, Eye, EyeOff, FolderOpen, KeyRound, Layers, ShieldCheck } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { assetChannels } from "@shared/ipc/assets";
@@ -12,6 +12,9 @@ function FreesoundCard() {
 	const [set, setSet] = useState<boolean | null>(null);
 	const [key, setKey] = useState("");
 	const [busy, setBusy] = useState(false);
+	const [reveal, setReveal] = useState(false);
+	// The saved key, kept only while it is shown.
+	const [shown, setShown] = useState("");
 	useEffect(() => {
 		void call(assetChannels.freesoundKey).then((k) => setSet(k.set));
 	}, []);
@@ -23,6 +26,8 @@ function FreesoundCard() {
 			const r = await call(assetChannels.freesoundSetKey, { key: key.trim() });
 			setSet(r.set);
 			setKey("");
+			setShown("");
+			setReveal(false);
 			toast.success("Freesound key saved", { description: "The key worked. It is stored encrypted on this PC." });
 		} catch (err) {
 			toast.error("The key was not saved", { description: errorText(err) });
@@ -36,7 +41,31 @@ function FreesoundCard() {
 		if (!ok) return;
 		await call(assetChannels.freesoundSetKey, { key: null });
 		setSet(false);
+		setKey("");
+		setShown("");
+		setReveal(false);
 		toast.success("Freesound key removed");
+	};
+
+	const toggleReveal = async () => {
+		if (reveal) {
+			// Hide: take the saved key off the screen again.
+			if (shown && key === shown) setKey("");
+			setShown("");
+			setReveal(false);
+			return;
+		}
+		if (set && !key) {
+			try {
+				const r = await call(assetChannels.freesoundRevealKey);
+				setShown(r.key);
+				setKey(r.key);
+			} catch (err) {
+				toast.error("Could not show the key", { description: errorText(err) });
+				return;
+			}
+		}
+		setReveal(true);
 	};
 
 	return (
@@ -65,9 +94,31 @@ function FreesoundCard() {
 				>
 					<div className="flex-1 space-y-1.5">
 						<Label htmlFor="fs-key">{set ? "Replace API key" : "API key"}</Label>
-						<Input id="fs-key" type="password" autoComplete="off" spellCheck={false} value={key} onChange={(e) => setKey(e.target.value)} placeholder={set ? "••••••••••••••••" : "Paste your Freesound API key"} aria-invalid={!!key && !valid} />
+						<div className="relative">
+							<Input
+								id="fs-key"
+								type={reveal ? "text" : "password"}
+								autoComplete="off"
+								spellCheck={false}
+								className="pr-10"
+								value={key}
+								onChange={(e) => setKey(e.target.value)}
+								placeholder={set ? "••••••••••••••••" : "Paste your Freesound API key"}
+								aria-invalid={!!key && !valid}
+							/>
+							{set || key ? (
+								<button
+									type="button"
+									aria-label={reveal ? "Hide key" : "Show key"}
+									onClick={() => void toggleReveal()}
+									className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded-md p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground"
+								>
+									{reveal ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+								</button>
+							) : null}
+						</div>
 					</div>
-					<Button type="submit" disabled={!valid} loading={busy}>
+					<Button type="submit" disabled={!valid || (!!shown && key === shown)} loading={busy}>
 						{busy ? null : <KeyRound />}
 						Test and save
 					</Button>
@@ -79,7 +130,7 @@ function FreesoundCard() {
 				</form>
 				<p className="flex flex-wrap items-center gap-x-1.5 text-[12px] text-muted-foreground">
 					<ShieldCheck className="size-3.5 text-success" />
-					Stored with Windows encryption. It is never shown again, logged, or sent anywhere except freesound.org.
+					Stored with Windows encryption. It is shown only when you click the eye. It is never logged or sent anywhere except freesound.org.
 					<a href="https://freesound.org/apiv2/apply/" target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 font-medium text-primary hover:underline">
 						Get a free key
 						<ExternalLink className="size-3" />

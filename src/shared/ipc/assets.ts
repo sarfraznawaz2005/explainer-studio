@@ -38,6 +38,8 @@ export const assetChannels = {
 	starterCancel: defineChannel("assets:starter:cancel", NoInput, Ok),
 
 	freesoundKey: defineChannel("assets:freesound:key", NoInput, z.object({ set: z.boolean() })),
+	/** Gives the saved key in plain text, only when the user clicks the eye button. "" when no key is saved. */
+	freesoundRevealKey: defineChannel("assets:freesound:key:reveal", NoInput, z.object({ key: z.string() })),
 	/** Saves (after testing) or removes the key. */
 	freesoundSetKey: defineChannel("assets:freesound:key:set", z.object({ key: z.string().trim().min(8).max(200).regex(/^[A-Za-z0-9]+$/).nullable() }), z.object({ set: z.boolean() })),
 	freesoundSearch: defineChannel(

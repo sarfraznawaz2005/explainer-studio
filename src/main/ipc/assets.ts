@@ -84,6 +84,7 @@ export function registerAssetIpc(): void {
 	});
 
 	handle(assetChannels.freesoundKey, () => ({ set: hasFreesoundKey() }));
+	handle(assetChannels.freesoundRevealKey, async () => ({ key: await freesoundKey() }));
 	handle(assetChannels.freesoundSetKey, async ({ key }) => {
 		if (key) await testFreesoundKey(key);
 		await setFreesoundKey(key);

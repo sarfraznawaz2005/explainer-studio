@@ -3,7 +3,8 @@ import { registerSecret } from "./redact";
 /**
  * API keys at rest. The sealer is Electron safeStorage in the app (Windows DPAPI,
  * bound to the user account) and a fake in unit tests.
- * Plain keys never go to the renderer, logs or the database.
+ * Plain keys never go to logs or the database. They go to the renderer only when
+ * the user clicks a "show key" button (assets:freesound:key:reveal).
  */
 export type Sealer = {
 	available(): Promise<boolean>;
